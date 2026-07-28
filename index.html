@@ -163,6 +163,18 @@
   .drawer-section{margin-bottom:22px;}
   .drawer-section h3{font-size:13px;text-transform:uppercase;letter-spacing:0.3px;color:var(--ink-soft);margin:0 0 8px 0;}
   .drawer-section p.hint{font-size:12.5px;color:var(--ink-soft);margin:4px 0 10px 0;line-height:1.4;}
+  .section-title-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+  .section-title-row h3{margin:0;}
+  .info-btn{width:20px;height:20px;border-radius:50%;border:1px solid var(--line);background:var(--paper-raised);color:var(--ink-soft);font-size:11px;font-weight:700;font-style:italic;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .mini-label{display:block;font-size:11px;color:var(--ink-soft);margin:8px 0 3px 0;}
+  .mini-date-row{display:flex;gap:8px;}
+  .mini-date-row > div{flex:1;}
+  .lastbackup-banner{border-radius:10px;padding:10px 12px;margin-bottom:18px;font-size:12.5px;font-weight:600;background:var(--priority-bg);color:var(--accent);}
+  .lastbackup-banner.stale{background:#F6DCD8;color:var(--neg);}
+  .session-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--paper-raised);border-radius:12px;padding:9px 12px;margin-bottom:10px;box-shadow:var(--shadow);font-size:12.5px;}
+  .session-bar .txt{color:var(--ink-soft);}
+  .session-bar button{background:var(--tab-bg);color:#fff;border:none;border-radius:8px;padding:8px 12px;font-size:12.5px;font-weight:700;cursor:pointer;flex-shrink:0;}
+  .session-bar.no-session button{background:var(--accent);}
   .btn{display:block;width:100%;text-align:left;background:var(--paper-raised);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:14px;font-weight:600;color:var(--ink);cursor:pointer;margin-bottom:8px;}
   .btn:active{background:var(--neutre-bg,#efeee6);}
   .btn.primary{background:var(--tab-bg);color:#fff;border:none;}
@@ -218,40 +230,54 @@
 <div class="drawer" id="drawer">
   <div class="drawer-head"><h2>Réglages &amp; données</h2><button class="drawer-close" id="btnCloseDrawer">✕</button></div>
   <div class="drawer-body">
+    <div class="lastbackup-banner" id="lastBackupBanner"></div>
+
     <div class="drawer-section">
-      <h3>Année scolaire</h3>
-      <p class="hint">Sert de référence pour les semestres et pour le nom des fichiers exportés.</p>
-      <input type="text" id="anneeScolaireInput" placeholder="ex : 2025/2026" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:11px 12px;font-size:14px;">
+      <div class="section-title-row"><h3>Année scolaire</h3></div>
+      <input type="text" id="anneeScolaireInput" placeholder="ex : 2025/2026" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:11px 12px;font-size:14px;margin-bottom:10px;">
+      <div class="mini-date-row">
+        <div><label class="mini-label">Début S1</label><input type="date" id="s1StartInput" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;"></div>
+        <div><label class="mini-label">Fin S1</label><input type="date" id="s1EndInput" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;"></div>
+      </div>
+      <div class="mini-date-row">
+        <div><label class="mini-label">Début S2</label><input type="date" id="s2StartInput" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;"></div>
+        <div><label class="mini-label">Fin S2</label><input type="date" id="s2EndInput" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;"></div>
+      </div>
     </div>
+
     <div class="drawer-section">
-      <h3>Sauvegarde automatique</h3>
-      <p class="hint">Les données se sauvegardent seules sur cet appareil, dans ce navigateur. Ouvrir le fichier sur un autre ordinateur ou dans un autre navigateur ne les retrouvera pas — utilise la sauvegarde complète ci-dessous pour transférer ou sécuriser tes données.</p>
-      <div class="status" id="autosaveStatus"></div>
-    </div>
-    <div class="drawer-section">
-      <h3>Listes de classes (export Pronote)</h3>
-      <p class="hint">Fichier CSV exporté depuis Pronote (colonnes <span class="mono">Eleves</span>, <span class="mono">Né(s)</span>, <span class="mono">Sexe</span> conservées, le reste est ignoré). Le numéro de classe n'étant pas dans ce fichier, indique-le ci-dessous avant chaque import — un fichier = une classe. Réimporter une classe met à jour la liste (ajout des nouveaux, passage en inactif de ceux qui sont partis) sans toucher aux autres élèves ni à leur historique.</p>
+      <div class="section-title-row"><h3>Listes des classes (export Pronote)</h3><button class="info-btn" data-info="pronote">i</button></div>
       <input type="text" id="classeInputName" placeholder="Nom de la classe (ex: 3e1)" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:11px 12px;font-size:14px;margin-bottom:8px;">
       <button class="btn primary" id="btnImportStudents">Importer ce fichier pour cette classe (CSV Pronote)</button>
       <div class="status" id="statusStudents"></div>
     </div>
+
     <div class="drawer-section">
-      <h3>Sauvegarde complète (toutes classes, toutes observations)</h3>
-      <p class="hint">Ce fichier contient tout : la liste de toutes tes classes et l'intégralité de l'historique des observations. Exporte-le régulièrement pour ne rien perdre. <strong>Réimporter une sauvegarde remplace entièrement les données actuelles</strong> — utile en cas d'erreur, mais irréversible.</p>
+      <div class="section-title-row"><h3>Sauvegarde complète</h3><button class="info-btn" data-info="backup">i</button></div>
       <button class="btn primary" id="btnExportFull">Exporter une sauvegarde complète (CSV)</button>
       <button class="btn danger" id="btnImportFull">Restaurer depuis une sauvegarde (écrase tout)</button>
       <div class="status" id="statusFull"></div>
+      <div class="status" id="autosaveStatus"></div>
     </div>
+
     <div class="drawer-section">
-      <h3>Exports pédagogiques</h3>
+      <div class="section-title-row"><h3>Exports pédagogiques</h3><button class="info-btn" data-info="exports">i</button></div>
       <button class="btn" id="btnPrintProfiles">Profils de la classe (impression / PDF)</button>
       <button class="btn" id="btnExportXls">Comparaison classe (XLS)</button>
-      <p class="hint">Le navigateur enregistre chaque export dans son dossier de téléchargement habituel ; une sélection manuelle du dossier à chaque fois n'est malheureusement pas possible sur téléphone (limitation de Safari/Firefox mobile).</p>
     </div>
+
     <div class="drawer-section">
       <h3>Réinitialiser</h3>
       <button class="btn danger" id="btnReset">Effacer toutes les données de l'année scolaire</button>
     </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="infoModal">
+  <div class="modal-box">
+    <h3 id="infoModalTitle"></h3>
+    <div id="infoModalText" style="font-size:13px;color:var(--ink-soft);line-height:1.5;"></div>
+    <div class="modal-actions"><button class="btn primary" id="infoModalClose">Fermer</button></div>
   </div>
 </div>
 
@@ -355,6 +381,9 @@ var state = {
   period: "annee",
   customStart: "", customEnd: "",
   anneeScolaire: defaultAnneeScolaire(),
+  semesterDates: {s1Start:"", s1End:"", s2Start:"", s2End:""},
+  sessions: {},        // {classeName: {startedAt: ms}}
+  lastFullBackupMs: null,
   suiviSort: {key:"nom", dir:"asc"},
   sheet: null,         // {studentId, mode:'categories'|'facts', categoryId}
   profileStudentId: null
@@ -401,7 +430,7 @@ function persist(){
     Promise.all([
       kvSet("students", JSON.stringify(state.students)),
       kvSet("observations", JSON.stringify(state.observations)),
-      kvSet("meta", JSON.stringify({currentClasse:state.currentClasse, anneeScolaire:state.anneeScolaire}))
+      kvSet("meta", JSON.stringify({currentClasse:state.currentClasse, anneeScolaire:state.anneeScolaire, semesterDates:state.semesterDates, sessions:state.sessions, lastFullBackupMs:state.lastFullBackupMs}))
     ]).then(function(){ setAutosaveStatus("Sauvegardé automatiquement sur cet appareil.", "ok"); })
       .catch(function(){ setAutosaveStatus("Sauvegarde automatique indisponible ici — pense à exporter en CSV.", "err"); });
   }, 300);
@@ -410,8 +439,16 @@ function loadPersisted(){
   return Promise.all([kvGet("students"), kvGet("observations"), kvGet("meta")]).then(function(res){
     if(res[0]) state.students = JSON.parse(res[0]);
     if(res[1]) state.observations = JSON.parse(res[1]);
-    if(res[2]){ var m=JSON.parse(res[2]); if(m && m.currentClasse) state.currentClasse=m.currentClasse; if(m && m.anneeScolaire) state.anneeScolaire=m.anneeScolaire; }
+    if(res[2]){
+      var m=JSON.parse(res[2]);
+      if(m && m.currentClasse) state.currentClasse=m.currentClasse;
+      if(m && m.anneeScolaire) state.anneeScolaire=m.anneeScolaire;
+      if(m && m.semesterDates) state.semesterDates=m.semesterDates;
+      if(m && m.sessions) state.sessions=m.sessions;
+      if(m && m.lastFullBackupMs) state.lastFullBackupMs=m.lastFullBackupMs;
+    }
     if(!state.anneeScolaire) state.anneeScolaire = defaultAnneeScolaire();
+    ensureSemesterDates();
     setAutosaveStatus("Données chargées depuis la sauvegarde locale de cet appareil.", "ok");
   }).catch(function(){
     setAutosaveStatus("Sauvegarde automatique indisponible ici — pense à exporter/importer en CSV.", "err");
@@ -471,22 +508,69 @@ function anneeScolaireStartYear(){
   if(!y || isNaN(y)) y = parseInt(defaultAnneeScolaire().split("/")[0],10);
   return y;
 }
-function periodBounds(){
-  var startYear = anneeScolaireStartYear();
-  var syStart = new Date(startYear,8,1).getTime(); // 1er septembre
-  var jan31 = new Date(startYear+1,0,31,23,59,59).getTime();
-  var feb1 = new Date(startYear+1,1,1).getTime();
-  var aug31 = new Date(startYear+1,7,31,23,59,59).getTime();
-  if(state.period==="s1") return [syStart, jan31];
-  if(state.period==="s2") return [feb1, aug31];
-  if(state.period==="custom"){
+function defaultSemesterDates(){
+  var y = anneeScolaireStartYear();
+  return { s1Start: y+"-09-01", s1End: (y+1)+"-01-31", s2Start: (y+1)+"-02-01", s2End: (y+1)+"-08-31" };
+}
+function ensureSemesterDates(){
+  var sd = state.semesterDates || {};
+  if(!sd.s1Start && !sd.s1End && !sd.s2Start && !sd.s2End){
+    state.semesterDates = defaultSemesterDates();
+  }
+}
+function periodBoundsFor(key){
+  ensureSemesterDates();
+  var sd = state.semesterDates;
+  if(key==="s1") return [new Date(sd.s1Start).getTime(), new Date(sd.s1End+"T23:59:59").getTime()];
+  if(key==="s2") return [new Date(sd.s2Start).getTime(), new Date(sd.s2End+"T23:59:59").getTime()];
+  if(key==="custom"){
     var s = state.customStart ? new Date(state.customStart).getTime() : 0;
     var e = state.customEnd ? new Date(state.customEnd+"T23:59:59").getTime() : Date.now();
     return [s,e];
   }
   return [0, Infinity]; // année complète = tout
 }
+function periodBounds(){ return periodBoundsFor(state.period); }
 function inPeriod(ms){ var b=periodBounds(); return ms>=b[0] && ms<=b[1]; }
+function currentSemesterBounds(){
+  var now = Date.now();
+  var b1 = periodBoundsFor("s1");
+  if(now>=b1[0] && now<=b1[1]) return b1;
+  return periodBoundsFor("s2");
+}
+
+/* ---------------- Sessions (par classe, indépendantes du choix de classe dans le menu) ---------------- */
+function ensureSession(classe){
+  if(!state.sessions[classe]){ state.sessions[classe] = {startedAt: Date.now()}; persist(); }
+}
+function startNewSession(classe){
+  state.sessions[classe] = {startedAt: Date.now()};
+  persist();
+}
+function sessionCoverage(student){
+  var sess = state.sessions[student.classe];
+  if(!sess) return {pct:0, active:false, startedAt:null, categoriesFilled:0};
+  var obs = studentObs(student.id, false).filter(function(o){ return o.ms>=sess.startedAt; });
+  var cats={}; obs.forEach(function(o){cats[o.categorie]=true;});
+  var categoriesFilled = Object.keys(cats).length;
+  return {pct:Math.round(100*categoriesFilled/5), active:true, startedAt:sess.startedAt, categoriesFilled:categoriesFilled};
+}
+function confidenceIndex(student){
+  // Indice provisoire (V1) : à paramétrer plus finement dans une prochaine version.
+  var bounds = currentSemesterBounds();
+  var obs = studentObs(student.id, false).filter(function(o){ return o.ms>=bounds[0] && o.ms<=bounds[1]; });
+  var cats={}, dates={};
+  obs.forEach(function(o){ cats[o.categorie]=true; dates[o.dateISO]=true; });
+  var categoriesFilled = Object.keys(cats).length;
+  var sessionsObserved = Object.keys(dates).length;
+  var allSemesterSessions = classSessionDates(student.classe).filter(function(d){
+    var ms = new Date(d).getTime(); return ms>=bounds[0] && ms<=bounds[1];
+  });
+  var totalSessions = Math.max(1, allSemesterSessions.length);
+  var breadth = categoriesFilled/5;
+  var depth = Math.min(1, sessionsObserved/totalSessions);
+  return Math.round(100*(0.5*breadth + 0.5*depth));
+}
 
 /* ---------------- Data ops ---------------- */
 function normalizeHeader(s){
@@ -580,6 +664,7 @@ function importObservationsCsv(text){
 function recordObservation(studentId_, categorie, factId){
   var s = state.students.find(function(x){return x.id===studentId_;});
   if(!s) return;
+  ensureSession(s.classe);
   var stamp = nowStamp();
   state.observations.push({id:uid(), studentId:studentId_, classe:s.classe, categorie:categorie, fait:factId, dateISO:stamp.dateISO, timeHM:stamp.timeHM, ms:stamp.ms});
   persist();
@@ -749,24 +834,38 @@ function renderClasseView(main){
     html = '<div class="empty"><h3>Classe vide</h3><p>Aucun élève actif dans cette classe.</p></div>';
     main.innerHTML = html; return;
   }
+  var sess = state.sessions[state.currentClasse];
+  if(sess){
+    var d = new Date(sess.startedAt);
+    html += '<div class="session-bar"><span class="txt">Session en cours depuis '+pad(d.getHours())+':'+pad(d.getMinutes())+'</span><button id="btnNewSession">Nouvelle session</button></div>';
+  } else {
+    html += '<div class="session-bar no-session"><span class="txt">Aucune session en cours pour '+escapeHtml(state.currentClasse)+'</span><button id="btnNewSession">Démarrer une session</button></div>';
+  }
   html += '<div style="margin-bottom:8px;">'+
     '<span class="legend-chip"><span class="legend-dot" style="background:var(--watch-bg);border:1px solid #E0B563;"></span>À suivre</span>'+
     '<span class="legend-chip"><span class="legend-dot" style="background:var(--priority-bg);border:1px solid #A9C7DC;"></span>Manque de faits</span>'+
     '</div>';
   html += '<div class="grid">';
   students.forEach(function(s){
-    var cov = coverage(s);
+    var sessCov = sessionCoverage(s);
+    var conf = confidenceIndex(s);
     var pri = isPriority(s);
     var watch = needsFollowUp(s);
     var colorClass = watch ? "watch" : (pri ? "priority" : "");
     html += '<div class="card '+colorClass+'" data-card="'+s.id+'">';
     html += '<button class="profile-btn" data-profile="'+s.id+'" title="Voir le profil">📊</button>';
-    html += '<div class="ring-wrap">'+ringSVG(cov.pct)+'<div class="ring-pct">'+cov.pct+'%</div></div>';
+    html += '<div class="ring-wrap">'+ringSVG(sessCov.pct)+'<div class="ring-pct">'+conf+'%</div></div>';
     html += '<div class="name">'+escapeHtml(s.prenom)+'</div>';
     html += '</div>';
   });
   html += '</div>';
   main.innerHTML = html;
+  var newSessBtn = document.getElementById("btnNewSession");
+  if(newSessBtn) newSessBtn.addEventListener("click", function(){
+    if(state.sessions[state.currentClasse] && !window.confirm("Démarrer une nouvelle session va remettre à zéro l'anneau de couverture de cette heure pour "+state.currentClasse+". Continuer ?")) return;
+    startNewSession(state.currentClasse);
+    render();
+  });
   document.querySelectorAll("[data-card]").forEach(function(card){
     card.addEventListener("click", function(e){
       if(e.target.closest("[data-profile]")) return;
@@ -987,10 +1086,52 @@ document.getElementById("subnav").addEventListener("click", function(e){
 
 /* ---------------- Drawer ---------------- */
 var dOverlayNeeded = document.getElementById("drawer");
-function openDrawer(){ document.getElementById("anneeScolaireInput").value = state.anneeScolaire; document.getElementById("drawer").classList.add("open"); document.getElementById("overlay").classList.add("open"); }
+var INFO_TEXTS = {
+  pronote: "Fichier CSV exporté depuis Pronote (colonnes Eleves, Né(s), Sexe conservées, le reste est ignoré). Le numéro de classe n'étant pas dans ce fichier, indique-le dans le champ ci-dessus avant chaque import — un fichier = une classe. Réimporter une classe met à jour la liste (ajout des nouveaux, passage en inactif de ceux qui sont partis) sans toucher aux autres élèves ni à leur historique.",
+  backup: "Ce fichier contient tout : la liste de toutes tes classes et l'intégralité de l'historique des observations, ainsi que l'année scolaire et les dates de semestres configurées. Exporte-le régulièrement pour ne rien perdre. Réimporter une sauvegarde remplace entièrement les données actuelles — utile en cas d'erreur, mais irréversible. (Les données se sauvegardent aussi automatiquement sur cet appareil, dans ce navigateur — mais ouvrir le fichier sur un autre appareil ou après avoir vidé les données du navigateur ne les retrouvera pas : cette sauvegarde complète est ta seule copie transférable.)",
+  exports: "Le navigateur enregistre chaque export dans son dossier de téléchargement habituel ; une sélection manuelle du dossier à chaque fois n'est malheureusement pas possible sur téléphone (limitation de Safari/Firefox mobile)."
+};
+function renderBackupBanner(){
+  var el = document.getElementById("lastBackupBanner");
+  if(!el) return;
+  if(!state.lastFullBackupMs){
+    el.textContent = "Aucune sauvegarde complète effectuée pour l'instant.";
+    el.className = "lastbackup-banner stale";
+    return;
+  }
+  var d = new Date(state.lastFullBackupMs);
+  var stale = (Date.now()-state.lastFullBackupMs) > 7*24*3600*1000;
+  el.textContent = "Dernière sauvegarde complète : "+pad(d.getDate())+"/"+pad(d.getMonth()+1)+"/"+d.getFullYear()+" à "+pad(d.getHours())+":"+pad(d.getMinutes())+(stale?" — plus d'une semaine, pense à en refaire une !":"");
+  el.className = "lastbackup-banner"+(stale?" stale":"");
+}
+function openDrawer(){
+  document.getElementById("anneeScolaireInput").value = state.anneeScolaire;
+  ensureSemesterDates();
+  document.getElementById("s1StartInput").value = state.semesterDates.s1Start;
+  document.getElementById("s1EndInput").value = state.semesterDates.s1End;
+  document.getElementById("s2StartInput").value = state.semesterDates.s2Start;
+  document.getElementById("s2EndInput").value = state.semesterDates.s2End;
+  renderBackupBanner();
+  document.getElementById("drawer").classList.add("open"); document.getElementById("overlay").classList.add("open");
+}
 function closeDrawerFn(){ document.getElementById("drawer").classList.remove("open"); document.getElementById("overlay").classList.remove("open"); }
 document.getElementById("btnDrawer").addEventListener("click", openDrawer);
 document.getElementById("btnCloseDrawer").addEventListener("click", closeDrawerFn);
+
+document.querySelectorAll("[data-info]").forEach(function(btn){
+  btn.addEventListener("click", function(){
+    var key = btn.getAttribute("data-info");
+    document.getElementById("infoModalTitle").textContent = btn.closest(".section-title-row").querySelector("h3").textContent;
+    document.getElementById("infoModalText").textContent = INFO_TEXTS[key] || "";
+    document.getElementById("infoModal").classList.add("open");
+  });
+});
+document.getElementById("infoModalClose").addEventListener("click", function(){ document.getElementById("infoModal").classList.remove("open"); });
+
+document.getElementById("s1StartInput").addEventListener("change", function(){ state.semesterDates.s1Start=this.value; persist(); });
+document.getElementById("s1EndInput").addEventListener("change", function(){ state.semesterDates.s1End=this.value; persist(); });
+document.getElementById("s2StartInput").addEventListener("change", function(){ state.semesterDates.s2Start=this.value; persist(); });
+document.getElementById("s2EndInput").addEventListener("change", function(){ state.semesterDates.s2End=this.value; persist(); });
 
 document.getElementById("btnImportStudents").addEventListener("click", function(){
   var classe = document.getElementById("classeInputName").value.trim();
@@ -1020,7 +1161,10 @@ function fileStamp(){
 }
 
 document.getElementById("btnExportFull").addEventListener("click", function(){
+  ensureSemesterDates();
+  var sd = state.semesterDates;
   var lines=["type,classe,nom,prenom,naissance,sexe,statut,date,heure,categorie,fait"];
+  lines.push(["META",state.anneeScolaire,sd.s1Start,sd.s1End,sd.s2Start,sd.s2End,"","","","",""].map(escCsv).join(","));
   state.students.forEach(function(s){
     lines.push(["ELEVE",s.classe,s.nom,s.prenom,s.naissance||"",s.sexe||"",s.status,"","","",""].map(escCsv).join(","));
   });
@@ -1029,6 +1173,9 @@ document.getElementById("btnExportFull").addEventListener("click", function(){
     lines.push(["OBS",o.classe,s.nom,s.prenom,"","","",o.dateISO,o.timeHM,o.categorie,o.fait].map(escCsv).join(","));
   });
   download("ClasseVue_"+fileStamp()+".csv", lines.join("\n"));
+  state.lastFullBackupMs = Date.now();
+  persist();
+  renderBackupBanner();
   setStatus("statusFull","Sauvegarde complète exportée.","ok");
 });
 
@@ -1044,9 +1191,13 @@ document.getElementById("fileFull").addEventListener("change", function(e){
       var rows = parseCsv(evt.target.result);
       var start = (rows[0] && rows[0][0]==="type") ? 1 : 0;
       var newStudents=[], newObs=[];
+      var newAnnee=null, newSemesterDates=null;
       for(var i=start;i<rows.length;i++){
         var r=rows[i]; if(!r[0]) continue;
-        if(r[0]==="ELEVE"){
+        if(r[0]==="META"){
+          newAnnee = r[1]||null;
+          newSemesterDates = {s1Start:r[2]||"", s1End:r[3]||"", s2Start:r[4]||"", s2End:r[5]||""};
+        } else if(r[0]==="ELEVE"){
           var classe=r[1]||"", nom=r[2]||"", prenom=r[3]||"", naissance=r[4]||"", sexe=r[5]||"", statut=r[6]||"actif";
           newStudents.push({id:studentId(classe,nom,prenom,naissance), classe:classe, nom:nom, prenom:prenom, naissance:naissance, sexe:sexe, status:statut});
         } else if(r[0]==="OBS"){
@@ -1060,8 +1211,11 @@ document.getElementById("fileFull").addEventListener("change", function(e){
       }
       state.students = newStudents;
       state.observations = newObs;
+      if(newAnnee) state.anneeScolaire = newAnnee;
+      if(newSemesterDates) state.semesterDates = newSemesterDates;
       state.currentClasse = classesList()[0] || null;
       persist();
+      renderBackupBanner();
       setStatus("statusFull", "Restauration effectuée : "+newStudents.length+" élève(s), "+newObs.length+" observation(s).", "ok");
       render();
     }catch(err){ setStatus("statusFull","Erreur de lecture du fichier.","err"); }
