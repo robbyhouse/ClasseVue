@@ -169,12 +169,13 @@
   .mini-label{display:block;font-size:11px;color:var(--ink-soft);margin:8px 0 3px 0;}
   .mini-date-row{display:flex;gap:8px;}
   .mini-date-row > div{flex:1;}
-  .lastbackup-banner{border-radius:10px;padding:10px 12px;margin-bottom:18px;font-size:12.5px;font-weight:600;background:var(--priority-bg);color:var(--accent);}
+  .lastbackup-banner{border-radius:10px;padding:10px 12px;margin-bottom:18px;font-size:12.5px;font-weight:600;background:var(--priority-bg);color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .lastbackup-banner.stale{background:#F6DCD8;color:var(--neg);}
   .session-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--paper-raised);border-radius:12px;padding:9px 12px;margin-bottom:10px;box-shadow:var(--shadow);font-size:12.5px;}
   .session-bar .txt{color:var(--ink-soft);}
   .session-bar button{background:var(--tab-bg);color:#fff;border:none;border-radius:8px;padding:8px 12px;font-size:12.5px;font-weight:700;cursor:pointer;flex-shrink:0;}
   .session-bar.no-session button{background:var(--accent);}
+  .session-bar.active button{background:var(--neutre);color:#4a3a06;}
   .btn{display:block;width:100%;text-align:left;background:var(--paper-raised);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:14px;font-weight:600;color:var(--ink);cursor:pointer;margin-bottom:8px;}
   .btn:active{background:var(--neutre-bg,#efeee6);}
   .btn.primary{background:var(--tab-bg);color:#fff;border:none;}
@@ -478,6 +479,7 @@ function parseCsvLine(line, delim){
   return out.map(function(s){return s.trim();});
 }
 function parseCsv(text){
+  text = (text||"").replace(/^\uFEFF/, "");
   var lines=text.split(/\r\n|\n|\r/).filter(function(l){return l.trim().length>0;});
   if(lines.length===0) return [];
   var delim=detectDelimiter(lines[0]);
@@ -545,6 +547,10 @@ function ensureSession(classe){
 }
 function startNewSession(classe){
   state.sessions[classe] = {startedAt: Date.now()};
+  persist();
+}
+function endSession(classe){
+  delete state.sessions[classe];
   persist();
 }
 function sessionCoverage(student){
@@ -837,9 +843,9 @@ function renderClasseView(main){
   var sess = state.sessions[state.currentClasse];
   if(sess){
     var d = new Date(sess.startedAt);
-    html += '<div class="session-bar"><span class="txt">Session en cours depuis '+pad(d.getHours())+':'+pad(d.getMinutes())+'</span><button id="btnNewSession">Nouvelle session</button></div>';
+    html += '<div class="session-bar active"><span class="txt">Session en cours depuis '+pad(d.getHours())+':'+pad(d.getMinutes())+'</span><button id="btnEndSession">Fin de session</button></div>';
   } else {
-    html += '<div class="session-bar no-session"><span class="txt">Aucune session en cours pour '+escapeHtml(state.currentClasse)+'</span><button id="btnNewSession">Démarrer une session</button></div>';
+    html += '<div class="session-bar no-session"><span class="txt">Aucune session en cours pour '+escapeHtml(state.currentClasse)+'</span><button id="btnStartSession">Démarrer une session</button></div>';
   }
   html += '<div style="margin-bottom:8px;">'+
     '<span class="legend-chip"><span class="legend-dot" style="background:var(--watch-bg);border:1px solid #E0B563;"></span>À suivre</span>'+
@@ -860,12 +866,10 @@ function renderClasseView(main){
   });
   html += '</div>';
   main.innerHTML = html;
-  var newSessBtn = document.getElementById("btnNewSession");
-  if(newSessBtn) newSessBtn.addEventListener("click", function(){
-    if(state.sessions[state.currentClasse] && !window.confirm("Démarrer une nouvelle session va remettre à zéro l'anneau de couverture de cette heure pour "+state.currentClasse+". Continuer ?")) return;
-    startNewSession(state.currentClasse);
-    render();
-  });
+  var startBtn = document.getElementById("btnStartSession");
+  if(startBtn) startBtn.addEventListener("click", function(){ startNewSession(state.currentClasse); render(); });
+  var endBtn = document.getElementById("btnEndSession");
+  if(endBtn) endBtn.addEventListener("click", function(){ endSession(state.currentClasse); render(); });
   document.querySelectorAll("[data-card]").forEach(function(card){
     card.addEventListener("click", function(e){
       if(e.target.closest("[data-profile]")) return;
@@ -1095,13 +1099,13 @@ function renderBackupBanner(){
   var el = document.getElementById("lastBackupBanner");
   if(!el) return;
   if(!state.lastFullBackupMs){
-    el.textContent = "Aucune sauvegarde complète effectuée pour l'instant.";
+    el.textContent = "Aucune sauvegarde effectuée";
     el.className = "lastbackup-banner stale";
     return;
   }
   var d = new Date(state.lastFullBackupMs);
   var stale = (Date.now()-state.lastFullBackupMs) > 7*24*3600*1000;
-  el.textContent = "Dernière sauvegarde complète : "+pad(d.getDate())+"/"+pad(d.getMonth()+1)+"/"+d.getFullYear()+" à "+pad(d.getHours())+":"+pad(d.getMinutes())+(stale?" — plus d'une semaine, pense à en refaire une !":"");
+  el.textContent = (stale?"⚠ ":"")+"Dernière sauvegarde : "+pad(d.getDate())+"/"+pad(d.getMonth()+1)+"/"+d.getFullYear()+" "+pad(d.getHours())+":"+pad(d.getMinutes());
   el.className = "lastbackup-banner"+(stale?" stale":"");
 }
 function openDrawer(){
@@ -1189,9 +1193,13 @@ document.getElementById("fileFull").addEventListener("change", function(e){
   reader.onload=function(evt){
     try{
       var rows = parseCsv(evt.target.result);
-      var start = (rows[0] && rows[0][0]==="type") ? 1 : 0;
+      var headerCell = rows[0] && rows[0][0] ? rows[0][0].trim().toLowerCase() : "";
+      var start = (headerCell==="type") ? 1 : 0;
       var newStudents=[], newObs=[];
       var newAnnee=null, newSemesterDates=null;
+      var lookup = {}; // normalized "classe|nom|prenom" -> student
+      function normKey(classe,nom,prenom){ return slugify(classe)+"|"+slugify(nom)+"|"+slugify(prenom); }
+      var countEleve=0, countObs=0, countObsMatched=0;
       for(var i=start;i<rows.length;i++){
         var r=rows[i]; if(!r[0]) continue;
         if(r[0]==="META"){
@@ -1199,15 +1207,29 @@ document.getElementById("fileFull").addEventListener("change", function(e){
           newSemesterDates = {s1Start:r[2]||"", s1End:r[3]||"", s2Start:r[4]||"", s2End:r[5]||""};
         } else if(r[0]==="ELEVE"){
           var classe=r[1]||"", nom=r[2]||"", prenom=r[3]||"", naissance=r[4]||"", sexe=r[5]||"", statut=r[6]||"actif";
-          newStudents.push({id:studentId(classe,nom,prenom,naissance), classe:classe, nom:nom, prenom:prenom, naissance:naissance, sexe:sexe, status:statut});
+          var stud = {id:studentId(classe,nom,prenom,naissance), classe:classe, nom:nom, prenom:prenom, naissance:naissance, sexe:sexe, status:statut};
+          newStudents.push(stud);
+          lookup[normKey(classe,nom,prenom)] = stud;
+          countEleve++;
         } else if(r[0]==="OBS"){
+          countObs++;
           var oClasse=r[1]||"", oNom=r[2]||"", oPrenom=r[3]||"", oDate=r[7]||"", oHeure=r[8]||"00:00", oCat=r[9]||"", oFait=r[10]||"";
-          var match = newStudents.find(function(s){return s.classe===oClasse && s.nom===oNom && s.prenom===oPrenom;});
-          var oid = match ? match.id : studentId(oClasse,oNom,oPrenom);
-          if(!match){ newStudents.push({id:oid, classe:oClasse, nom:oNom, prenom:oPrenom, naissance:"", sexe:"", status:"actif"}); }
+          var match = lookup[normKey(oClasse,oNom,oPrenom)];
+          var oid;
+          if(match){ oid = match.id; countObsMatched++; }
+          else {
+            oid = studentId(oClasse,oNom,oPrenom);
+            var ghost = {id:oid, classe:oClasse, nom:oNom, prenom:oPrenom, naissance:"", sexe:"", status:"actif"};
+            newStudents.push(ghost);
+            lookup[normKey(oClasse,oNom,oPrenom)] = ghost;
+          }
           var ms = new Date(oDate+"T"+oHeure+":00").getTime() || Date.now();
           newObs.push({id:uid(), studentId:oid, classe:oClasse, categorie:oCat, fait:oFait, dateISO:oDate, timeHM:oHeure, ms:ms});
         }
+      }
+      if(countEleve===0 && countObs===0){
+        setStatus("statusFull","Ce fichier ne contient aucune donnée reconnue (vérifie qu'il s'agit bien d'un export ClasseVue).","err");
+        e.target.value=""; return;
       }
       state.students = newStudents;
       state.observations = newObs;
@@ -1216,7 +1238,7 @@ document.getElementById("fileFull").addEventListener("change", function(e){
       state.currentClasse = classesList()[0] || null;
       persist();
       renderBackupBanner();
-      setStatus("statusFull", "Restauration effectuée : "+newStudents.length+" élève(s), "+newObs.length+" observation(s).", "ok");
+      setStatus("statusFull", "Restauration effectuée : "+countEleve+" élève(s) lu(s), "+countObs+" observation(s) lue(s) ("+countObsMatched+" rattachées directement).", "ok");
       render();
     }catch(err){ setStatus("statusFull","Erreur de lecture du fichier.","err"); }
   };
@@ -1225,8 +1247,9 @@ document.getElementById("fileFull").addEventListener("change", function(e){
 
 document.getElementById("btnReset").addEventListener("click", function(){
   if(window.confirm("Effacer toutes les données de l'année scolaire "+state.anneeScolaire+" (toutes classes, toutes observations) ? Pense à exporter une sauvegarde avant. Cette action est irréversible.")){
-    state.students=[]; state.observations=[]; state.currentClasse=null; persist(); render();
-    setStatus("statusFull","Données effacées.","ok");
+    state.students=[]; state.observations=[]; state.currentClasse=null; state.sessions={}; state.lastFullBackupMs=null; persist(); render();
+    renderBackupBanner();
+    setStatus("statusFull","Données effacées. Aucune sauvegarde n'a été faite depuis.","ok");
   }
 });
 function setStatus(id,msg,cls){ var el=document.getElementById(id); el.textContent=msg; el.className="status "+(cls||""); }
