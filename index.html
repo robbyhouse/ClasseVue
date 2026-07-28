@@ -132,6 +132,8 @@
   .table-wrap{background:var(--paper-raised);border-radius:var(--radius);box-shadow:var(--shadow);overflow-x:auto;}
   table{width:100%;border-collapse:collapse;font-size:13px;min-width:560px;}
   th,td{padding:9px 8px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap;}
+  th:first-child,td:first-child{position:sticky;left:0;z-index:2;background:var(--paper-raised);box-shadow:2px 0 4px rgba(0,0,0,0.06);}
+  th:first-child{z-index:3;}
   th{color:var(--ink-soft);font-size:11px;text-transform:uppercase;letter-spacing:0.3px;font-weight:700;}
   .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;}
   .badge.pri{background:var(--priority-bg);color:var(--accent);}
@@ -173,6 +175,9 @@
   .mini-label{display:block;font-size:11px;color:var(--ink-soft);margin:8px 0 3px 0;}
   .mini-date-row{display:flex;gap:8px;}
   .mini-date-row > div{flex:1;}
+  .annee-summary{background:var(--paper-raised);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.6;margin-bottom:10px;}
+  .annee-summary .big{font-weight:700;font-size:14.5px;}
+  #modeSemestreBtn.mode-active, #modeTrimestreBtn.mode-active{background:var(--tab-bg);color:#fff;border-color:var(--tab-bg);}
   .lastbackup-banner{border-radius:10px;padding:10px 12px;margin-bottom:18px;font-size:12.5px;font-weight:600;background:var(--priority-bg);color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .lastbackup-banner.stale{background:#F6DCD8;color:var(--neg);}
   .session-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--paper-raised);border-radius:12px;padding:9px 12px;margin-bottom:10px;box-shadow:var(--shadow);font-size:12.5px;}
@@ -239,15 +244,8 @@
 
     <div class="drawer-section">
       <div class="section-title-row"><h3>Année scolaire</h3></div>
-      <input type="text" id="anneeScolaireInput" placeholder="ex : 2025/2026" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:11px 12px;font-size:14px;margin-bottom:10px;">
-      <div class="mini-date-row">
-        <div><label class="mini-label">Début S1</label><input type="date" id="s1StartInput" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;"></div>
-        <div><label class="mini-label">Fin S1</label><input type="date" id="s1EndInput" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;"></div>
-      </div>
-      <div class="mini-date-row">
-        <div><label class="mini-label">Début S2</label><input type="date" id="s2StartInput" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;"></div>
-        <div><label class="mini-label">Fin S2</label><input type="date" id="s2EndInput" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;"></div>
-      </div>
+      <div id="anneeSummary" class="annee-summary"></div>
+      <button class="btn" id="btnEditAnnee">✎ Modifier ces réglages</button>
     </div>
 
     <div class="drawer-section">
@@ -285,6 +283,25 @@
     <h3 id="infoModalTitle"></h3>
     <div id="infoModalText" style="font-size:13px;color:var(--ink-soft);line-height:1.5;"></div>
     <div class="modal-actions"><button class="btn primary" id="infoModalClose">Fermer</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="anneeModal">
+  <div class="modal-box" style="max-width:420px;">
+    <h3>Modifier l'année scolaire</h3>
+    <p style="font-size:12.5px;color:var(--neg);line-height:1.4;margin:0 0 14px 0;">⚠ Modifier ces réglages en cours d'année peut fausser les indices déjà calculés (indice de confiance, radars). À ajuster de préférence en tout début d'année.</p>
+    <label class="mini-label">Année scolaire</label>
+    <input type="text" id="anneeScolaireInput" placeholder="ex : 2025/2026" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:11px 12px;font-size:14px;margin-bottom:12px;">
+    <label class="mini-label">Découpage</label>
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <button type="button" class="btn" id="modeSemestreBtn" style="margin-bottom:0;">Semestres</button>
+      <button type="button" class="btn" id="modeTrimestreBtn" style="margin-bottom:0;">Trimestres</button>
+    </div>
+    <div id="periodDateFields"></div>
+    <div class="modal-actions">
+      <button class="btn" id="anneeModalCancel">Annuler</button>
+      <button class="btn primary" id="anneeModalSave">Enregistrer</button>
+    </div>
   </div>
 </div>
 
@@ -388,7 +405,8 @@ var state = {
   period: "annee",
   customStart: "", customEnd: "",
   anneeScolaire: defaultAnneeScolaire(),
-  semesterDates: {s1Start:"", s1End:"", s2Start:"", s2End:""},
+  periodMode: "semestre", // "semestre" | "trimestre"
+  periodDates: {p1Start:"", p1End:"", p2Start:"", p2End:"", p3Start:"", p3End:""},
   sessionLog: [],      // {id, classe, startedAt, endedAt(null tant qu'active)}
   absences: [],        // {sessionId, studentId}
   lastFullBackupMs: null,
@@ -438,7 +456,7 @@ function persist(){
     Promise.all([
       kvSet("students", JSON.stringify(state.students)),
       kvSet("observations", JSON.stringify(state.observations)),
-      kvSet("meta", JSON.stringify({currentClasse:state.currentClasse, anneeScolaire:state.anneeScolaire, semesterDates:state.semesterDates, sessionLog:state.sessionLog, absences:state.absences, lastFullBackupMs:state.lastFullBackupMs}))
+      kvSet("meta", JSON.stringify({currentClasse:state.currentClasse, anneeScolaire:state.anneeScolaire, periodMode:state.periodMode, periodDates:state.periodDates, sessionLog:state.sessionLog, absences:state.absences, lastFullBackupMs:state.lastFullBackupMs}))
     ]).then(function(){ setAutosaveStatus("Sauvegardé automatiquement sur cet appareil.", "ok"); })
       .catch(function(){ setAutosaveStatus("Sauvegarde automatique indisponible ici — pense à exporter en CSV.", "err"); });
   }, 300);
@@ -451,13 +469,14 @@ function loadPersisted(){
       var m=JSON.parse(res[2]);
       if(m && m.currentClasse) state.currentClasse=m.currentClasse;
       if(m && m.anneeScolaire) state.anneeScolaire=m.anneeScolaire;
-      if(m && m.semesterDates) state.semesterDates=m.semesterDates;
+      if(m && m.periodMode) state.periodMode=m.periodMode;
+      if(m && m.periodDates) state.periodDates=m.periodDates;
       if(m && m.sessionLog) state.sessionLog=m.sessionLog;
       if(m && m.absences) state.absences=m.absences;
       if(m && m.lastFullBackupMs) state.lastFullBackupMs=m.lastFullBackupMs;
     }
     if(!state.anneeScolaire) state.anneeScolaire = defaultAnneeScolaire();
-    ensureSemesterDates();
+    ensurePeriodDates();
     setAutosaveStatus("Données chargées depuis la sauvegarde locale de cet appareil.", "ok");
   }).catch(function(){
     setAutosaveStatus("Sauvegarde automatique indisponible ici — pense à exporter/importer en CSV.", "err");
@@ -518,21 +537,31 @@ function anneeScolaireStartYear(){
   if(!y || isNaN(y)) y = parseInt(defaultAnneeScolaire().split("/")[0],10);
   return y;
 }
-function defaultSemesterDates(){
-  var y = anneeScolaireStartYear();
-  return { s1Start: y+"-09-01", s1End: (y+1)+"-01-31", s2Start: (y+1)+"-02-01", s2End: (y+1)+"-08-31" };
+function periodCount(){ return state.periodMode==="trimestre" ? 3 : 2; }
+function periodLabel(n){
+  var noun = state.periodMode==="trimestre" ? "trimestre" : "semestre";
+  var ord = n===1 ? "1er" : (n+"e");
+  return ord+" "+noun;
 }
-function ensureSemesterDates(){
-  var sd = state.semesterDates || {};
-  if(!sd.s1Start && !sd.s1End && !sd.s2Start && !sd.s2End){
-    state.semesterDates = defaultSemesterDates();
+function defaultPeriodDates(mode, startYear){
+  var y = startYear;
+  if(mode==="trimestre"){
+    return { p1Start:y+"-09-01", p1End:y+"-12-20", p2Start:y+"-12-21", p2End:(y+1)+"-03-20", p3Start:(y+1)+"-03-21", p3End:(y+1)+"-07-05" };
+  }
+  return { p1Start:y+"-09-01", p1End:(y+1)+"-01-31", p2Start:(y+1)+"-02-01", p2End:(y+1)+"-08-31", p3Start:"", p3End:"" };
+}
+function ensurePeriodDates(){
+  var pd = state.periodDates || {};
+  if(!pd.p1Start && !pd.p1End && !pd.p2Start && !pd.p2End){
+    state.periodDates = defaultPeriodDates(state.periodMode, anneeScolaireStartYear());
   }
 }
 function periodBoundsFor(key){
-  ensureSemesterDates();
-  var sd = state.semesterDates;
-  if(key==="s1") return [new Date(sd.s1Start).getTime(), new Date(sd.s1End+"T23:59:59").getTime()];
-  if(key==="s2") return [new Date(sd.s2Start).getTime(), new Date(sd.s2End+"T23:59:59").getTime()];
+  ensurePeriodDates();
+  var pd = state.periodDates;
+  if(key==="p1") return [new Date(pd.p1Start).getTime(), new Date(pd.p1End+"T23:59:59").getTime()];
+  if(key==="p2") return [new Date(pd.p2Start).getTime(), new Date(pd.p2End+"T23:59:59").getTime()];
+  if(key==="p3") return [new Date(pd.p3Start).getTime(), new Date(pd.p3End+"T23:59:59").getTime()];
   if(key==="custom"){
     var s = state.customStart ? new Date(state.customStart).getTime() : 0;
     var e = state.customEnd ? new Date(state.customEnd+"T23:59:59").getTime() : Date.now();
@@ -544,9 +573,12 @@ function periodBounds(){ return periodBoundsFor(state.period); }
 function inPeriod(ms){ var b=periodBounds(); return ms>=b[0] && ms<=b[1]; }
 function currentSemesterBounds(){
   var now = Date.now();
-  var b1 = periodBoundsFor("s1");
-  if(now>=b1[0] && now<=b1[1]) return b1;
-  return periodBoundsFor("s2");
+  var n = periodCount();
+  for(var i=1;i<=n;i++){
+    var b = periodBoundsFor("p"+i);
+    if(now>=b[0] && now<=b[1]) return b;
+  }
+  return periodBoundsFor("p"+n);
 }
 
 /* ---------------- Sessions (historique par classe, indépendant du choix de classe dans le menu) ---------------- */
@@ -795,12 +827,18 @@ function ringSVG(pct, size){
 }
 function radarSVG(scores, size){
   size = size||260;
-  var cx=size/2, cy=size/2, R=size/2-40;
+  var cx=size/2, cy=size/2, R=size/2-52;
   var labels = CATEGORIES.map(function(c){return c.label;});
   var n = CATEGORIES.length;
   function pt(i, radius){
     var angle = -Math.PI/2 + i*(2*Math.PI/n);
     return [cx+radius*Math.cos(angle), cy+radius*Math.sin(angle)];
+  }
+  function wrapLabel(text){
+    var words = text.split(" ");
+    if(words.length<=1) return [text];
+    var mid = Math.ceil(words.length/2);
+    return [words.slice(0,mid).join(" "), words.slice(mid).join(" ")];
   }
   var grid = "";
   [0.25,0.5,0.75,1].forEach(function(f){
@@ -812,8 +850,14 @@ function radarSVG(scores, size){
   for(var i=0;i<n;i++){
     var p = pt(i,R);
     axisLines += '<line x1="'+cx+'" y1="'+cy+'" x2="'+p[0]+'" y2="'+p[1]+'" stroke="#DCD9CC" stroke-width="1"/>';
-    var lp = pt(i,R+26);
-    labelsHtml += '<text x="'+lp[0]+'" y="'+lp[1]+'" font-size="10.5" fill="var(--ink-soft)" text-anchor="middle" dominant-baseline="middle">'+escapeHtml(labels[i])+'</text>';
+    var lp = pt(i,R+22);
+    var lines = wrapLabel(labels[i]);
+    var dyStart = lines.length>1 ? -5 : 0;
+    labelsHtml += '<text x="'+lp[0]+'" y="'+lp[1]+'" font-size="9.5" fill="var(--ink-soft)" text-anchor="middle">';
+    lines.forEach(function(line, li){
+      labelsHtml += '<tspan x="'+lp[0]+'" dy="'+(li===0?dyStart:11)+'">'+escapeHtml(line)+'</tspan>';
+    });
+    labelsHtml += '</text>';
   }
   var polyPts = [], dots="";
   CATEGORIES.forEach(function(c,i){
@@ -971,12 +1015,14 @@ function renderSuiviView(main){
   });
 }
 function periodSelectorHtml(){
-  var h = '<select id="periodSelect">'+
-    '<option value="annee"'+(state.period==="annee"?" selected":"")+'>Année complète</option>'+
-    '<option value="s1"'+(state.period==="s1"?" selected":"")+'>1er semestre</option>'+
-    '<option value="s2"'+(state.period==="s2"?" selected":"")+'>2nd semestre</option>'+
-    '<option value="custom"'+(state.period==="custom"?" selected":"")+'>Période personnalisée</option>'+
-    '</select>';
+  var opts = '<option value="annee"'+(state.period==="annee"?" selected":"")+'>Année complète</option>';
+  var n = periodCount();
+  for(var i=1;i<=n;i++){
+    var key = "p"+i;
+    opts += '<option value="'+key+'"'+(state.period===key?" selected":"")+'>'+periodLabel(i)+'</option>';
+  }
+  opts += '<option value="custom"'+(state.period==="custom"?" selected":"")+'>Période personnalisée</option>';
+  var h = '<select id="periodSelect">'+opts+'</select>';
   if(state.period==="custom"){
     h += '<input type="date" id="customStart" value="'+state.customStart+'"> <span class="hint">à</span> <input type="date" id="customEnd" value="'+state.customEnd+'">';
   }
@@ -1075,12 +1121,11 @@ function renderProfile(){
   var pri = isPriority(s);
   var scores = dimensionScores(s.id, true);
   var evo = monthlyEvolution(s.id);
-  var obsList = studentObs(s.id, true).slice().sort(function(a,b){return b.ms-a.ms;}).slice(0,40);
+  var obsList = studentObs(s.id, true).slice().sort(function(a,b){return b.ms-a.ms;});
 
   var html = '<div class="period-row">'+periodSelectorHtml()+'</div>';
   html += '<div class="profile-stats">';
   html += '<div class="stat"><div class="val">'+cov.pct+'%</div><div class="lab">Couverture</div></div>';
-  html += '<div class="stat"><div class="val">'+cov.categoriesFilled+'/5</div><div class="lab">Catégories renseignées</div></div>';
   html += '<div class="stat"><div class="val">'+(pri?"Oui":"Non")+'</div><div class="lab">À observer en priorité</div></div>';
   html += '</div>';
   html += '<div class="radar-wrap">'+radarSVG(scores)+'</div>';
@@ -1097,7 +1142,7 @@ function renderProfile(){
   });
   html += '</div>';
 
-  html += '<div class="evo-title" style="margin-bottom:8px;">Historique récent</div>';
+  html += '<div class="evo-title" style="margin-bottom:8px;">Historique</div>';
   if(obsList.length===0){ html += '<div class="hint" style="color:var(--ink-soft);font-size:13px;">Aucune observation.</div>'; }
   obsList.forEach(function(o){
     var f = factById(o.categorie, o.fait);
@@ -1143,13 +1188,26 @@ function renderBackupBanner(){
   el.textContent = (stale?"⚠ ":"")+"Dernière sauvegarde : "+pad(d.getDate())+"/"+pad(d.getMonth()+1)+"/"+d.getFullYear()+" "+pad(d.getHours())+":"+pad(d.getMinutes());
   el.className = "lastbackup-banner"+(stale?" stale":"");
 }
+function frDate(iso){
+  if(!iso) return "—";
+  var parts = iso.split("-");
+  if(parts.length!==3) return iso;
+  return parts[2]+"/"+parts[1]+"/"+parts[0];
+}
+function renderAnneeSummary(){
+  ensurePeriodDates();
+  var el = document.getElementById("anneeSummary");
+  if(!el) return;
+  var pd = state.periodDates;
+  var n = periodCount();
+  var html = '<div class="big">'+escapeHtml(state.anneeScolaire)+' · '+(state.periodMode==="trimestre"?"Trimestres":"Semestres")+'</div>';
+  for(var i=1;i<=n;i++){
+    html += periodLabel(i)+' : '+frDate(pd["p"+i+"Start"])+' → '+frDate(pd["p"+i+"End"])+'<br>';
+  }
+  el.innerHTML = html;
+}
 function openDrawer(){
-  document.getElementById("anneeScolaireInput").value = state.anneeScolaire;
-  ensureSemesterDates();
-  document.getElementById("s1StartInput").value = state.semesterDates.s1Start;
-  document.getElementById("s1EndInput").value = state.semesterDates.s1End;
-  document.getElementById("s2StartInput").value = state.semesterDates.s2Start;
-  document.getElementById("s2EndInput").value = state.semesterDates.s2End;
+  renderAnneeSummary();
   renderBackupBanner();
   var expSel = document.getElementById("exportClasseSelect");
   var classes = classesList();
@@ -1160,6 +1218,59 @@ function closeDrawerFn(){ document.getElementById("drawer").classList.remove("op
 document.getElementById("btnDrawer").addEventListener("click", openDrawer);
 document.getElementById("btnCloseDrawer").addEventListener("click", closeDrawerFn);
 
+/* ---------------- Modifier l'année scolaire (modal dédié) ---------------- */
+var modalTemp = { anneeScolaire:"", periodMode:"semestre", periodDates:{} };
+function periodLabelForMode(n, mode){
+  var noun = mode==="trimestre" ? "trimestre" : "semestre";
+  var ord = n===1 ? "1er" : (n+"e");
+  return ord+" "+noun;
+}
+function renderModeButtons(){
+  document.getElementById("modeSemestreBtn").classList.toggle("mode-active", modalTemp.periodMode==="semestre");
+  document.getElementById("modeTrimestreBtn").classList.toggle("mode-active", modalTemp.periodMode==="trimestre");
+}
+function renderPeriodDateFields(){
+  var n = modalTemp.periodMode==="trimestre" ? 3 : 2;
+  var html = "";
+  for(var i=1;i<=n;i++){
+    var sk="p"+i+"Start", ek="p"+i+"End";
+    html += '<div class="mini-date-row">'+
+      '<div><label class="mini-label">Début '+periodLabelForMode(i,modalTemp.periodMode)+'</label><input type="date" data-pkey="'+sk+'" value="'+(modalTemp.periodDates[sk]||"")+'" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;"></div>'+
+      '<div><label class="mini-label">Fin '+periodLabelForMode(i,modalTemp.periodMode)+'</label><input type="date" data-pkey="'+ek+'" value="'+(modalTemp.periodDates[ek]||"")+'" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;"></div>'+
+      '</div>';
+  }
+  document.getElementById("periodDateFields").innerHTML = html;
+  document.querySelectorAll("#periodDateFields [data-pkey]").forEach(function(inp){
+    inp.addEventListener("change", function(){ modalTemp.periodDates[this.getAttribute("data-pkey")] = this.value; });
+  });
+}
+document.getElementById("btnEditAnnee").addEventListener("click", function(){
+  ensurePeriodDates();
+  modalTemp.anneeScolaire = state.anneeScolaire;
+  modalTemp.periodMode = state.periodMode;
+  modalTemp.periodDates = Object.assign({}, state.periodDates);
+  document.getElementById("anneeScolaireInput").value = modalTemp.anneeScolaire;
+  renderModeButtons();
+  renderPeriodDateFields();
+  document.getElementById("anneeModal").classList.add("open");
+});
+document.getElementById("modeSemestreBtn").addEventListener("click", function(){
+  if(modalTemp.periodMode!=="semestre"){ modalTemp.periodMode="semestre"; modalTemp.periodDates=defaultPeriodDates("semestre", anneeScolaireStartYear()); renderModeButtons(); renderPeriodDateFields(); }
+});
+document.getElementById("modeTrimestreBtn").addEventListener("click", function(){
+  if(modalTemp.periodMode!=="trimestre"){ modalTemp.periodMode="trimestre"; modalTemp.periodDates=defaultPeriodDates("trimestre", anneeScolaireStartYear()); renderModeButtons(); renderPeriodDateFields(); }
+});
+document.getElementById("anneeModalCancel").addEventListener("click", function(){ document.getElementById("anneeModal").classList.remove("open"); });
+document.getElementById("anneeModalSave").addEventListener("click", function(){
+  state.anneeScolaire = document.getElementById("anneeScolaireInput").value.trim() || defaultAnneeScolaire();
+  state.periodMode = modalTemp.periodMode;
+  state.periodDates = modalTemp.periodDates;
+  persist();
+  document.getElementById("anneeModal").classList.remove("open");
+  renderAnneeSummary();
+  render();
+});
+
 document.querySelectorAll("[data-info]").forEach(function(btn){
   btn.addEventListener("click", function(){
     var key = btn.getAttribute("data-info");
@@ -1169,11 +1280,6 @@ document.querySelectorAll("[data-info]").forEach(function(btn){
   });
 });
 document.getElementById("infoModalClose").addEventListener("click", function(){ document.getElementById("infoModal").classList.remove("open"); });
-
-document.getElementById("s1StartInput").addEventListener("change", function(){ state.semesterDates.s1Start=this.value; persist(); });
-document.getElementById("s1EndInput").addEventListener("change", function(){ state.semesterDates.s1End=this.value; persist(); });
-document.getElementById("s2StartInput").addEventListener("change", function(){ state.semesterDates.s2Start=this.value; persist(); });
-document.getElementById("s2EndInput").addEventListener("change", function(){ state.semesterDates.s2End=this.value; persist(); });
 
 document.getElementById("btnImportStudents").addEventListener("click", function(){
   var classe = document.getElementById("classeInputName").value.trim();
@@ -1194,8 +1300,6 @@ document.getElementById("fileStudents").addEventListener("change", function(e){
   };
   reader.readAsText(file,"UTF-8"); e.target.value="";
 });
-var anneeInput = document.getElementById("anneeScolaireInput");
-anneeInput.addEventListener("change", function(){ state.anneeScolaire = anneeInput.value.trim() || defaultAnneeScolaire(); persist(); });
 
 function fileStamp(){
   var d = new Date();
@@ -1203,10 +1307,10 @@ function fileStamp(){
 }
 
 document.getElementById("btnExportFull").addEventListener("click", function(){
-  ensureSemesterDates();
-  var sd = state.semesterDates;
+  ensurePeriodDates();
+  var pd = state.periodDates;
   var lines=["type,classe,nom,prenom,naissance,sexe,statut,date,heure,categorie,fait"];
-  lines.push(["META",state.anneeScolaire,sd.s1Start,sd.s1End,sd.s2Start,sd.s2End,"","","","",""].map(escCsv).join(","));
+  lines.push(["META",state.anneeScolaire,state.periodMode,pd.p1Start,pd.p1End,pd.p2Start,pd.p2End,pd.p3Start,pd.p3End,"",""].map(escCsv).join(","));
   state.students.forEach(function(s){
     lines.push(["ELEVE",s.classe,s.nom,s.prenom,s.naissance||"",s.sexe||"",s.status,"","","",""].map(escCsv).join(","));
   });
@@ -1221,7 +1325,7 @@ document.getElementById("btnExportFull").addEventListener("click", function(){
     var s = state.students.find(function(x){return x.id===a.studentId;}) || {classe:"",nom:"",prenom:""};
     lines.push(["ABSENCE",s.classe,a.sessionId,s.nom,s.prenom].map(escCsv).join(","));
   });
-  download("ClasseVue_"+fileStamp()+".csv", lines.join("\n"));
+  download("ClasseVueBackup_"+fileStamp()+".csv", lines.join("\n"));
   state.lastFullBackupMs = Date.now();
   persist();
   renderBackupBanner();
@@ -1241,7 +1345,7 @@ document.getElementById("fileFull").addEventListener("change", function(e){
       var headerCell = rows[0] && rows[0][0] ? rows[0][0].trim().toLowerCase() : "";
       var start = (headerCell==="type") ? 1 : 0;
       var newStudents=[], newObs=[];
-      var newAnnee=null, newSemesterDates=null;
+      var newAnnee=null, newPeriodMode=null, newPeriodDates=null;
       var newSessionLog=[], absenceRaw=[];
       var lookup = {}; // normalized "classe|nom|prenom" -> student
       function normKey(classe,nom,prenom){ return slugify(classe)+"|"+slugify(nom)+"|"+slugify(prenom); }
@@ -1250,7 +1354,8 @@ document.getElementById("fileFull").addEventListener("change", function(e){
         var r=rows[i]; if(!r[0]) continue;
         if(r[0]==="META"){
           newAnnee = r[1]||null;
-          newSemesterDates = {s1Start:r[2]||"", s1End:r[3]||"", s2Start:r[4]||"", s2End:r[5]||""};
+          newPeriodMode = (r[2]==="trimestre") ? "trimestre" : "semestre";
+          newPeriodDates = {p1Start:r[3]||"", p1End:r[4]||"", p2Start:r[5]||"", p2End:r[6]||"", p3Start:r[7]||"", p3End:r[8]||""};
         } else if(r[0]==="SESSION"){
           newSessionLog.push({id:r[2]||uid(), classe:r[1]||"", startedAt:parseInt(r[3],10)||Date.now(), endedAt: r[4]?parseInt(r[4],10):null});
         } else if(r[0]==="ABSENCE"){
@@ -1291,10 +1396,12 @@ document.getElementById("fileFull").addEventListener("change", function(e){
       state.sessionLog = newSessionLog;
       state.absences = newAbsences;
       if(newAnnee) state.anneeScolaire = newAnnee;
-      if(newSemesterDates) state.semesterDates = newSemesterDates;
+      if(newPeriodMode) state.periodMode = newPeriodMode;
+      if(newPeriodDates) state.periodDates = newPeriodDates;
       state.currentClasse = classesList()[0] || null;
       persist();
       renderBackupBanner();
+      renderAnneeSummary();
       setStatus("statusFull", "Restauration effectuée : "+countEleve+" élève(s) lu(s), "+countObs+" observation(s) lue(s) ("+countObsMatched+" rattachées directement).", "ok");
       render();
     }catch(err){ setStatus("statusFull","Erreur de lecture du fichier.","err"); }
@@ -1348,7 +1455,7 @@ document.getElementById("printModalGo").addEventListener("click", function(){
   });
   document.getElementById("printView").innerHTML = html || "<p>Aucun élève.</p>";
   var oldTitle = document.title;
-  document.title = "ClasseVue_Profils_"+sanitizeFilePart(exportClasse)+"_"+fileStamp();
+  document.title = "ClasseVueObs"+sanitizeFilePart(exportClasse)+"_"+fileStamp();
   window.print();
   setTimeout(function(){ document.title = oldTitle; }, 500);
 });
@@ -1366,7 +1473,7 @@ document.getElementById("btnExportXls").addEventListener("click", function(){
       CATEGORIES.map(function(c){ var v=scores[c.id]; return "<td>"+(v===null?"":v)+"</td>"; }).join("")+"</tr>";
   });
   var html = "<html><head><meta charset='UTF-8'></head><body><table border='1'>"+rows+"</table></body></html>";
-  download("ClasseVueCompar_"+sanitizeFilePart(exportClasse)+"_"+fileStamp()+".xls", html, "application/vnd.ms-excel");
+  download("ClasseVueComp"+sanitizeFilePart(exportClasse)+"_"+fileStamp()+".xls", html, "application/vnd.ms-excel");
 });
 
 loadPersisted().then(function(){ render(); }).catch(function(){ render(); });
