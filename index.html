@@ -134,6 +134,7 @@
   th,td{padding:9px 8px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap;}
   th:first-child,td:first-child{position:sticky;left:0;z-index:2;background:var(--paper-raised);box-shadow:2px 0 4px rgba(0,0,0,0.06);}
   th:first-child{z-index:3;}
+  .table-wrap select{padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;background:#fff;}
   th{color:var(--ink-soft);font-size:11px;text-transform:uppercase;letter-spacing:0.3px;font-weight:700;}
   .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;}
   .badge.pri{background:var(--priority-bg);color:var(--accent);}
@@ -215,6 +216,7 @@
 <div class="subnav" id="subnav">
   <button data-view="classe" class="active">Classe</button>
   <button data-view="suivi">Suivi</button>
+  <button data-view="objectifs">Objectifs</button>
 </div>
 
 <main id="main"></main>
@@ -331,58 +333,70 @@
 var CATEGORIES = [
   {id:"entree", label:"Entrée dans le travail", groups:[
     {facts:[
-      {id:"demarre_immediat", label:"Démarre immédiatement", v:2},
-      {id:"demarre_relance", label:"Démarre après une relance", v:1},
-      {id:"attend_sans_commencer", label:"Attend sans commencer", v:-1},
-      {id:"ne_demarre_pas", label:"Ne démarre pas malgré les sollicitations", v:-2}
+      {id:"demarre_immediat", label:"Démarre immédiatement", v:100},
+      {id:"demarre_relance", label:"Démarre après une relance", v:75},
+      {id:"attend_sans_commencer", label:"Attend sans commencer", v:50},
+      {id:"ne_demarre_pas", label:"Refuse / ne démarre pas", v:25}
     ]}
   ]},
   {id:"difficulte", label:"Face à une difficulté", groups:[
     {facts:[
-      {id:"cherche_seul", label:"Cherche seul", v:2},
-      {id:"utilise_document_d", label:"Utilise le document", v:2},
-      {id:"utilise_coup_de_pouce", label:"Utilise un coup de pouce", v:1},
-      {id:"demande_aide_pertinente", label:"Demande une aide pertinente", v:1}
+      {id:"cherche_seul", label:"Cherche seul", v:100},
+      {id:"utilise_document_d", label:"Utilise le document", v:100},
+      {id:"utilise_coup_de_pouce", label:"Utilise un coup de pouce", v:100},
+      {id:"demande_aide_pertinente", label:"Demande une aide pertinente", v:100}
     ]},
     {facts:[
-      {id:"attend_d", label:"Attend", v:-1},
-      {id:"observe_camarade", label:"Observe le travail d'un camarade", v:-1}
+      {id:"attend_d", label:"Attend", v:50},
+      {id:"observe_camarade", label:"Observe le travail d'un camarade", v:50}
     ]},
     {facts:[
-      {id:"copie_camarade", label:"Copie un camarade", v:-2},
-      {id:"copie_correction", label:"Copie directement la correction", v:-2}
+      {id:"copie_camarade", label:"Copie un camarade", v:25},
+      {id:"copie_correction", label:"Copie directement la correction", v:25}
     ]}
   ]},
   {id:"attention", label:"Gestion de l'attention", groups:[
     {facts:[
-      {id:"concentre", label:"Concentré sur la tâche", v:2},
-      {id:"reconcentre_seul", label:"Se reconcentre seul", v:1},
-      {id:"distrait_momentanement", label:"Distrait momentanément", v:0},
-      {id:"bavarde_travail", label:"Bavarde à propos du travail", v:1},
-      {id:"bavarde_hors_sujet", label:"Bavarde hors sujet", v:-1},
-      {id:"perturbe_camarade", label:"Perturbe un camarade", v:-2},
-      {id:"revasse", label:"Rêvasse / décroche", v:-1}
+      {id:"concentre", label:"Concentré sur la tâche", v:100},
+      {id:"reconcentre_seul", label:"Se reconcentre seul", v:100}
+    ]},
+    {facts:[
+      {id:"distrait_momentanement", label:"Distrait momentanément", v:50},
+      {id:"bavarde_travail", label:"Bavarde sur le travail", v:50}
+    ]},
+    {facts:[
+      {id:"bavarde_hors_sujet", label:"Bavarde hors sujet", v:25},
+      {id:"perturbe_camarade", label:"Perturbe un camarade", v:25},
+      {id:"revasse", label:"Rêvasse / ne suit plus l'activité", v:25}
     ]}
   ]},
   {id:"ressources", label:"Utilisation des ressources", groups:[
     {facts:[
-      {id:"utilise_document_r", label:"Utilise le document", v:2},
-      {id:"utilise_aides_activite", label:"Utilise les aides de l'activité", v:2},
-      {id:"echange_camarade", label:"Échange avec un camarade sur le travail", v:1},
-      {id:"sollicite_apres_cherche", label:"Sollicite le professeur après avoir cherché", v:1},
-      {id:"sollicite_immediat", label:"Sollicite immédiatement le professeur", v:-1},
-      {id:"attend_professeur", label:"Attend le professeur", v:-1},
-      {id:"attend_correction", label:"Attend la correction", v:-2}
+      {id:"utilise_document_r", label:"Utilise le document", v:100},
+      {id:"utilise_aides_activite", label:"Utilise les aides de l'activité", v:100},
+      {id:"echange_camarade", label:"Échange avec un camarade sur le travail", v:100},
+      {id:"sollicite_apres_cherche", label:"Sollicite le professeur après avoir cherché", v:100}
+    ]},
+    {facts:[
+      {id:"sollicite_immediat", label:"Sollicite immédiatement le professeur", v:50},
+      {id:"attend_professeur", label:"Attend que le professeur passe", v:50}
+    ]},
+    {facts:[
+      {id:"attend_correction", label:"Attend la correction", v:25}
     ]}
   ]},
   {id:"finalisation", label:"Finalisation du travail", groups:[
     {facts:[
-      {id:"activite_terminee", label:"Activité terminée", v:1},
-      {id:"verifie_travail", label:"Vérifie son travail", v:2},
-      {id:"corrige_erreur", label:"Corrige une erreur", v:2},
-      {id:"activite_incomplete", label:"Activité incomplète", v:-1},
-      {id:"passe_autre_activite", label:"Passe à une autre activité sans terminer", v:-1},
-      {id:"recopie_correction", label:"Recopie uniquement la correction", v:-2}
+      {id:"activite_terminee", label:"Activité terminée", v:100},
+      {id:"verifie_travail", label:"Vérifie son travail", v:100},
+      {id:"corrige_erreur", label:"Corrige une erreur", v:100}
+    ]},
+    {facts:[
+      {id:"activite_incomplete", label:"Activité incomplète", v:50},
+      {id:"passe_autre_activite", label:"Passe à autre chose sans terminer", v:50}
+    ]},
+    {facts:[
+      {id:"recopie_correction", label:"Recopie uniquement la correction", v:25}
     ]}
   ]}
 ];
@@ -409,6 +423,7 @@ var state = {
   periodDates: {p1Start:"", p1End:"", p2Start:"", p2End:"", p3Start:"", p3End:""},
   sessionLog: [],      // {id, classe, startedAt, endedAt(null tant qu'active)}
   absences: [],        // {sessionId, studentId}
+  objectives: {},       // {studentId: {entree,difficulte,attention,ressources,finalisation}}
   lastFullBackupMs: null,
   suiviSort: {key:"nom", dir:"asc"},
   sheet: null,         // {studentId, mode:'categories'|'facts', categoryId}
@@ -456,13 +471,14 @@ function persist(){
     Promise.all([
       kvSet("students", JSON.stringify(state.students)),
       kvSet("observations", JSON.stringify(state.observations)),
+      kvSet("objectives", JSON.stringify(state.objectives)),
       kvSet("meta", JSON.stringify({currentClasse:state.currentClasse, anneeScolaire:state.anneeScolaire, periodMode:state.periodMode, periodDates:state.periodDates, sessionLog:state.sessionLog, absences:state.absences, lastFullBackupMs:state.lastFullBackupMs}))
     ]).then(function(){ setAutosaveStatus("Sauvegardé automatiquement sur cet appareil.", "ok"); })
       .catch(function(){ setAutosaveStatus("Sauvegarde automatique indisponible ici — pense à exporter en CSV.", "err"); });
   }, 300);
 }
 function loadPersisted(){
-  return Promise.all([kvGet("students"), kvGet("observations"), kvGet("meta")]).then(function(res){
+  return Promise.all([kvGet("students"), kvGet("observations"), kvGet("meta"), kvGet("objectives")]).then(function(res){
     if(res[0]) state.students = JSON.parse(res[0]);
     if(res[1]) state.observations = JSON.parse(res[1]);
     if(res[2]){
@@ -475,6 +491,7 @@ function loadPersisted(){
       if(m && m.absences) state.absences=m.absences;
       if(m && m.lastFullBackupMs) state.lastFullBackupMs=m.lastFullBackupMs;
     }
+    if(res[3]) state.objectives = JSON.parse(res[3]);
     if(!state.anneeScolaire) state.anneeScolaire = defaultAnneeScolaire();
     ensurePeriodDates();
     setAutosaveStatus("Données chargées depuis la sauvegarde locale de cet appareil.", "ok");
@@ -777,7 +794,7 @@ function coverage(student){
 function needsFollowUp(student){
   // Placeholder V1 : seuil provisoire en attendant que les critères précis soient définis.
   var obs = studentObs(student.id, false);
-  var negCount = obs.filter(function(o){ var f=factById(o.categorie,o.fait); return f && f.v<0; }).length;
+  var negCount = obs.filter(function(o){ var f=factById(o.categorie,o.fait); return f && f.v<=50; }).length;
   return negCount>=3;
 }
 function isPriority(student){
@@ -789,18 +806,21 @@ function isPriority(student){
   var sessionsSince = lastIdx===-1 ? allSessions.length : (allSessions.length-1-lastIdx);
   return sessionsSince>=3;
 }
-function dimensionScores(studentId_, periodFiltered){
-  var obs = studentObs(studentId_, periodFiltered);
+function dimensionScoresForBounds(studentId_, bounds){
+  var obs = state.observations.filter(function(o){ return o.studentId===studentId_ && o.ms>=bounds[0] && o.ms<=bounds[1]; });
   var scores = {};
   CATEGORIES.forEach(function(c){
     var vals = obs.filter(function(o){return o.categorie===c.id;}).map(function(o){
-      var f = factById(c.id, o.fait); return f? f.v : 0;
-    });
+      var f = factById(c.id, o.fait); return f? f.v : null;
+    }).filter(function(v){return v!==null;});
     if(vals.length===0){ scores[c.id]=null; return; }
     var avg = vals.reduce(function(a,b){return a+b;},0)/vals.length;
-    scores[c.id] = Math.round(((avg+2)/4)*100); // map -2..+2 -> 0..100
+    scores[c.id] = Math.round(avg); // les faits portent déjà un pourcentage 0-100
   });
   return scores;
+}
+function dimensionScores(studentId_, periodFiltered){
+  return dimensionScoresForBounds(studentId_, periodFiltered ? periodBounds() : [0,Infinity]);
 }
 function monthlyEvolution(studentId_){
   var obs = studentObs(studentId_, true);
@@ -808,11 +828,12 @@ function monthlyEvolution(studentId_){
   obs.forEach(function(o){
     var key = o.dateISO.slice(0,7);
     if(!byMonth[key]) byMonth[key]={pos:0,neu:0,neg:0};
-    var f = factById(o.categorie, o.fait); var v = f?f.v:0;
-    if(v>0) byMonth[key].pos++; else if(v<0) byMonth[key].neg++; else byMonth[key].neu++;
+    var f = factById(o.categorie, o.fait); var v = f?f.v:50;
+    if(v>=75) byMonth[key].pos++; else if(v===50) byMonth[key].neu++; else byMonth[key].neg++;
   });
   return Object.keys(byMonth).sort().map(function(k){ return {month:k, counts:byMonth[k]}; });
 }
+
 
 /* ---------------- SVG builders ---------------- */
 function ringSVG(pct, size){
@@ -825,9 +846,9 @@ function ringSVG(pct, size){
     '<circle cx="'+size/2+'" cy="'+size/2+'" r="'+r+'" fill="none" stroke="'+color+'" stroke-width="5" stroke-linecap="round" stroke-dasharray="'+c+'" stroke-dashoffset="'+offset+'"/>'+
     '</svg>';
 }
-function radarSVG(scores, size){
+function radarSVG(scores, size, scoresYear, objectives){
   size = size||260;
-  var cx=size/2, cy=size/2, R=size/2-52;
+  var cx=size/2, cy=size/2-6, R=size/2-58;
   var labels = CATEGORIES.map(function(c){return c.label;});
   var n = CATEGORIES.length;
   function pt(i, radius){
@@ -868,7 +889,54 @@ function radarSVG(scores, size){
     dots += '<circle cx="'+p[0]+'" cy="'+p[1]+'" r="3.5" fill="'+((val===null)?"#B7B2A0":"var(--accent)")+'"/>';
   });
   var poly = '<polygon points="'+polyPts.join(" ")+'" fill="rgba(60,110,102,0.28)" stroke="var(--accent)" stroke-width="2"/>';
-  return '<svg viewBox="0 0 '+size+' '+size+'" width="'+size+'" height="'+size+'">'+grid+axisLines+poly+dots+labelsHtml+'</svg>';
+
+  var yearPoly = "", objPoly = "", objDots = "", legend = "";
+  if(scoresYear){
+    var yearPts = [];
+    CATEGORIES.forEach(function(c,i){
+      var val = scoresYear[c.id];
+      var radius = (val===null||val===undefined) ? R*0.12 : R*(val/100);
+      var p = pt(i, radius);
+      yearPts.push(p[0]+","+p[1]);
+    });
+    yearPoly = '<polygon points="'+yearPts.join(" ")+'" fill="none" stroke="var(--tab-bg)" stroke-width="1.6" stroke-dasharray="5,4"/>';
+  }
+  if(objectives){
+    var objPts = [], anyObj=false;
+    CATEGORIES.forEach(function(c,i){
+      var val = objectives[c.id];
+      if(val===undefined || val===null){ objPts.push(null); return; }
+      anyObj = true;
+      var p = pt(i, R*(val/100));
+      objPts.push(p);
+      objDots += '<circle cx="'+p[0]+'" cy="'+p[1]+'" r="4" fill="#D9A62E" stroke="#fff" stroke-width="1"/>';
+    });
+    if(anyObj){
+      // relie les points d'objectifs consécutifs quand ils existent, sans fermer le polygone à travers les axes non définis
+      var segs = "";
+      for(var i=0;i<objPts.length;i++){
+        var a = objPts[i], b = objPts[(i+1)%objPts.length];
+        if(a && b){ segs += '<line x1="'+a[0]+'" y1="'+a[1]+'" x2="'+b[0]+'" y2="'+b[1]+'" stroke="#D9A62E" stroke-width="1.4"/>'; }
+      }
+      objPoly = segs;
+    }
+  }
+  if(scoresYear || objectives){
+    var ly = size-10;
+    legend = '<g font-size="9" fill="var(--ink-soft)">';
+    var lx = 10;
+    if(scoresYear){
+      legend += '<line x1="'+lx+'" y1="'+ly+'" x2="'+(lx+14)+'" y2="'+ly+'" stroke="var(--tab-bg)" stroke-width="1.6" stroke-dasharray="4,3"/><text x="'+(lx+18)+'" y="'+(ly+3)+'">Année</text>';
+      lx += 60;
+    }
+    legend += '<line x1="'+lx+'" y1="'+ly+'" x2="'+(lx+14)+'" y2="'+ly+'" stroke="var(--accent)" stroke-width="2"/><text x="'+(lx+18)+'" y="'+(ly+3)+'">Période en cours</text>';
+    lx += 100;
+    if(objectives){
+      legend += '<circle cx="'+(lx+6)+'" cy="'+ly+'" r="3.5" fill="#D9A62E"/><text x="'+(lx+14)+'" y="'+(ly+3)+'">Objectif</text>';
+    }
+    legend += '</g>';
+  }
+  return '<svg viewBox="0 0 '+size+' '+size+'" width="'+size+'" height="'+size+'">'+grid+axisLines+yearPoly+poly+dots+objPoly+objDots+labelsHtml+legend+'</svg>';
 }
 
 /* ---------------- Rendering ---------------- */
@@ -899,7 +967,9 @@ function renderMain(){
     var b=document.getElementById("emptyImportBtn"); if(b) b.addEventListener("click", function(){document.getElementById("fileStudents").click();});
     return;
   }
-  if(state.view==="classe") renderClasseView(main); else renderSuiviView(main);
+  if(state.view==="classe") renderClasseView(main);
+  else if(state.view==="suivi") renderSuiviView(main);
+  else renderObjectifsView(main);
 }
 function renderClasseView(main){
   var students = activeStudents(state.currentClasse);
@@ -1014,6 +1084,37 @@ function renderSuiviView(main){
     });
   });
 }
+function renderObjectifsView(main){
+  var students = activeStudents(state.currentClasse);
+  if(students.length===0){ main.innerHTML = '<div class="empty"><h3>Rien à afficher</h3></div>'; return; }
+  var html = '<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 12px 0;">Objectif visé par l\'élève sur chaque critère (facultatif, modifiable à tout moment). Repère doré sur le radar du profil.</p>';
+  html += '<div class="table-wrap"><table><thead><tr><th>Élève</th>'+
+    CATEGORIES.map(function(c){return "<th>"+c.label+"</th>";}).join("")+
+    '</tr></thead><tbody>';
+  students.forEach(function(s){
+    var obj = state.objectives[s.id] || {};
+    html += '<tr><td>'+escapeHtml(s.prenom)+' '+escapeHtml(s.nom.toUpperCase())+'</td>';
+    CATEGORIES.forEach(function(c){
+      var val = obj[c.id] || "";
+      html += '<td><select data-obj-student="'+s.id+'" data-obj-cat="'+c.id+'">'+
+        '<option value=""'+(val===""?" selected":"")+'>—</option>'+
+        [100,75,50,25].map(function(v){ return '<option value="'+v+'"'+(String(val)===String(v)?" selected":"")+'>'+v+'%</option>'; }).join("")+
+        '</select></td>';
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  main.innerHTML = html;
+  document.querySelectorAll("[data-obj-student]").forEach(function(sel){
+    sel.addEventListener("change", function(){
+      var sid = this.getAttribute("data-obj-student"), cat = this.getAttribute("data-obj-cat");
+      if(!state.objectives[sid]) state.objectives[sid] = {};
+      if(this.value===""){ delete state.objectives[sid][cat]; }
+      else { state.objectives[sid][cat] = parseInt(this.value,10); }
+      persist();
+    });
+  });
+}
 function periodSelectorHtml(){
   var opts = '<option value="annee"'+(state.period==="annee"?" selected":"")+'>Année complète</option>';
   var n = periodCount();
@@ -1119,7 +1220,9 @@ function renderProfile(){
   document.getElementById("profileName").textContent = s.prenom+" "+s.nom.toUpperCase()+" — "+s.classe;
   var cov = coverage(s);
   var pri = isPriority(s);
-  var scores = dimensionScores(s.id, true);
+  var scoresCurrent = dimensionScoresForBounds(s.id, currentSemesterBounds());
+  var scoresYear = dimensionScoresForBounds(s.id, [0,Infinity]);
+  var objectives = state.objectives[s.id] || null;
   var evo = monthlyEvolution(s.id);
   var obsList = studentObs(s.id, true).slice().sort(function(a,b){return b.ms-a.ms;});
 
@@ -1128,7 +1231,8 @@ function renderProfile(){
   html += '<div class="stat"><div class="val">'+cov.pct+'%</div><div class="lab">Couverture</div></div>';
   html += '<div class="stat"><div class="val">'+(pri?"Oui":"Non")+'</div><div class="lab">À observer en priorité</div></div>';
   html += '</div>';
-  html += '<div class="radar-wrap">'+radarSVG(scores)+'</div>';
+  html += '<div class="radar-wrap">'+radarSVG(scoresCurrent, 260, scoresYear, objectives)+'</div>';
+  html += '<div style="text-align:center;font-size:11.5px;color:var(--ink-soft);margin-top:-14px;margin-bottom:16px;">Trait plein : '+(state.periodMode==="trimestre"?"trimestre":"semestre")+' en cours · Pointillé : année complète</div>';
 
   html += '<div class="evo-wrap"><div class="evo-title">Évolution mensuelle (période sélectionnée)</div>';
   if(evo.length===0){ html += '<div class="hint" style="color:var(--ink-soft);font-size:13px;">Pas encore d\'observation sur cette période.</div>'; }
@@ -1325,6 +1429,12 @@ document.getElementById("btnExportFull").addEventListener("click", function(){
     var s = state.students.find(function(x){return x.id===a.studentId;}) || {classe:"",nom:"",prenom:""};
     lines.push(["ABSENCE",s.classe,a.sessionId,s.nom,s.prenom].map(escCsv).join(","));
   });
+  Object.keys(state.objectives).forEach(function(studId){
+    var s = state.students.find(function(x){return x.id===studId;});
+    if(!s) return;
+    var o = state.objectives[studId];
+    lines.push(["OBJECTIF",s.classe,s.nom,s.prenom,o.entree||"",o.difficulte||"",o.attention||"",o.ressources||"",o.finalisation||""].map(escCsv).join(","));
+  });
   download("ClasseVueBackup_"+fileStamp()+".csv", lines.join("\n"));
   state.lastFullBackupMs = Date.now();
   persist();
@@ -1346,7 +1456,7 @@ document.getElementById("fileFull").addEventListener("change", function(e){
       var start = (headerCell==="type") ? 1 : 0;
       var newStudents=[], newObs=[];
       var newAnnee=null, newPeriodMode=null, newPeriodDates=null;
-      var newSessionLog=[], absenceRaw=[];
+      var newSessionLog=[], absenceRaw=[], objectifRaw=[];
       var lookup = {}; // normalized "classe|nom|prenom" -> student
       function normKey(classe,nom,prenom){ return slugify(classe)+"|"+slugify(nom)+"|"+slugify(prenom); }
       var countEleve=0, countObs=0, countObsMatched=0;
@@ -1360,6 +1470,8 @@ document.getElementById("fileFull").addEventListener("change", function(e){
           newSessionLog.push({id:r[2]||uid(), classe:r[1]||"", startedAt:parseInt(r[3],10)||Date.now(), endedAt: r[4]?parseInt(r[4],10):null});
         } else if(r[0]==="ABSENCE"){
           absenceRaw.push({classe:r[1]||"", sessionId:r[2]||"", nom:r[3]||"", prenom:r[4]||""});
+        } else if(r[0]==="OBJECTIF"){
+          objectifRaw.push({classe:r[1]||"", nom:r[2]||"", prenom:r[3]||"", entree:r[4]||"", difficulte:r[5]||"", attention:r[6]||"", ressources:r[7]||"", finalisation:r[8]||""});
         } else if(r[0]==="ELEVE"){
           var classe=r[1]||"", nom=r[2]||"", prenom=r[3]||"", naissance=r[4]||"", sexe=r[5]||"", statut=r[6]||"actif";
           var stud = {id:studentId(classe,nom,prenom,naissance), classe:classe, nom:nom, prenom:prenom, naissance:naissance, sexe:sexe, status:statut};
@@ -1387,12 +1499,23 @@ document.getElementById("fileFull").addEventListener("change", function(e){
         var match = lookup[normKey(a.classe,a.nom,a.prenom)];
         if(match){ newAbsences.push({studentId:match.id, sessionId:a.sessionId}); }
       });
+      var newObjectives = {};
+      objectifRaw.forEach(function(o){
+        var match = lookup[normKey(o.classe,o.nom,o.prenom)];
+        if(!match) return;
+        var entry = {};
+        ["entree","difficulte","attention","ressources","finalisation"].forEach(function(k){
+          if(o[k]) entry[k] = parseInt(o[k],10);
+        });
+        newObjectives[match.id] = entry;
+      });
       if(countEleve===0 && countObs===0){
         setStatus("statusFull","Ce fichier ne contient aucune donnée reconnue (vérifie qu'il s'agit bien d'un export ClasseVue).","err");
         e.target.value=""; return;
       }
       state.students = newStudents;
       state.observations = newObs;
+      state.objectives = newObjectives;
       state.sessionLog = newSessionLog;
       state.absences = newAbsences;
       if(newAnnee) state.anneeScolaire = newAnnee;
@@ -1411,7 +1534,7 @@ document.getElementById("fileFull").addEventListener("change", function(e){
 
 document.getElementById("btnReset").addEventListener("click", function(){
   if(window.confirm("Effacer toutes les données de l'année scolaire "+state.anneeScolaire+" (toutes classes, toutes observations) ? Pense à exporter une sauvegarde avant. Cette action est irréversible.")){
-    state.students=[]; state.observations=[]; state.currentClasse=null; state.sessionLog=[]; state.absences=[]; state.lastFullBackupMs=null; persist(); render();
+    state.students=[]; state.observations=[]; state.currentClasse=null; state.sessionLog=[]; state.absences=[]; state.objectives={}; state.lastFullBackupMs=null; persist(); render();
     renderBackupBanner();
     setStatus("statusFull","Données effacées. Aucune sauvegarde n'a été faite depuis.","ok");
   }
@@ -1433,14 +1556,16 @@ document.getElementById("printModalGo").addEventListener("click", function(){
   var html = "";
   students.forEach(function(s){
     var cov = coverage(s);
-    var scores = dimensionScores(s.id, true);
+    var scoresCurrent = dimensionScoresForBounds(s.id, currentSemesterBounds());
+    var scoresYear = dimensionScoresForBounds(s.id, [0,Infinity]);
+    var objectives = state.objectives[s.id] || null;
     html += '<div class="print-student">';
     html += '<h1 style="font-size:20px;margin-bottom:2px;">'+escapeHtml(s.prenom)+' '+escapeHtml(s.nom.toUpperCase())+'</h1>';
     html += '<div style="color:#555;font-size:13px;margin-bottom:14px;">'+escapeHtml(s.classe)+'</div>';
     if(withStats){
       html += '<div style="color:#555;font-size:13px;margin-bottom:14px;">Couverture '+cov.pct+'% ('+cov.categoriesFilled+'/5 catégories) — dernière observation : '+(cov.lastDate||"—")+'</div>';
     }
-    if(withRadar){ html += radarSVG(scores, 320); }
+    if(withRadar){ html += radarSVG(scoresCurrent, 320, scoresYear, objectives); }
     if(withFacts){
       var obsList = studentObs(s.id, true).slice().sort(function(a,b){return b.ms-a.ms;});
       html += '<div style="margin-top:16px;"><div style="font-size:12px;text-transform:uppercase;color:#777;font-weight:700;margin-bottom:6px;">Faits observés</div>';
