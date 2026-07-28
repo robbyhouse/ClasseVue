@@ -78,6 +78,10 @@
   .avatar-letters{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;color:var(--ink-soft);}
   .card .name{font-weight:700;font-size:11px;text-align:center;line-height:1.15;}
   .profile-btn{position:absolute;top:3px;right:3px;width:19px;height:19px;border-radius:6px;border:none;background:rgba(0,0,0,0.06);color:var(--ink-soft);font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+  .absent-btn{position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:6px;border:1px solid var(--line);background:var(--paper-raised);color:var(--ink-soft);font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+  .absent-btn.is-absent{background:var(--neg);border-color:var(--neg);color:#fff;}
+  .card.absent{opacity:0.45;}
+  .card.absent .name{text-decoration:line-through;}
   .inactive-badge{position:absolute;top:6px;left:6px;font-size:9px;background:var(--neg);color:#fff;padding:2px 5px;border-radius:5px;font-weight:700;}
 
   /* bottom sheet */
@@ -263,6 +267,8 @@
 
     <div class="drawer-section">
       <div class="section-title-row"><h3>Exports pédagogiques</h3><button class="info-btn" data-info="exports">i</button></div>
+      <label class="mini-label">Classe à exporter</label>
+      <select id="exportClasseSelect" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;"></select>
       <button class="btn" id="btnPrintProfiles">Profils de la classe (impression / PDF)</button>
       <button class="btn" id="btnExportXls">Comparaison classe (XLS)</button>
     </div>
@@ -383,7 +389,8 @@ var state = {
   customStart: "", customEnd: "",
   anneeScolaire: defaultAnneeScolaire(),
   semesterDates: {s1Start:"", s1End:"", s2Start:"", s2End:""},
-  sessions: {},        // {classeName: {startedAt: ms}}
+  sessionLog: [],      // {id, classe, startedAt, endedAt(null tant qu'active)}
+  absences: [],        // {sessionId, studentId}
   lastFullBackupMs: null,
   suiviSort: {key:"nom", dir:"asc"},
   sheet: null,         // {studentId, mode:'categories'|'facts', categoryId}
@@ -431,7 +438,7 @@ function persist(){
     Promise.all([
       kvSet("students", JSON.stringify(state.students)),
       kvSet("observations", JSON.stringify(state.observations)),
-      kvSet("meta", JSON.stringify({currentClasse:state.currentClasse, anneeScolaire:state.anneeScolaire, semesterDates:state.semesterDates, sessions:state.sessions, lastFullBackupMs:state.lastFullBackupMs}))
+      kvSet("meta", JSON.stringify({currentClasse:state.currentClasse, anneeScolaire:state.anneeScolaire, semesterDates:state.semesterDates, sessionLog:state.sessionLog, absences:state.absences, lastFullBackupMs:state.lastFullBackupMs}))
     ]).then(function(){ setAutosaveStatus("Sauvegardé automatiquement sur cet appareil.", "ok"); })
       .catch(function(){ setAutosaveStatus("Sauvegarde automatique indisponible ici — pense à exporter en CSV.", "err"); });
   }, 300);
@@ -445,7 +452,8 @@ function loadPersisted(){
       if(m && m.currentClasse) state.currentClasse=m.currentClasse;
       if(m && m.anneeScolaire) state.anneeScolaire=m.anneeScolaire;
       if(m && m.semesterDates) state.semesterDates=m.semesterDates;
-      if(m && m.sessions) state.sessions=m.sessions;
+      if(m && m.sessionLog) state.sessionLog=m.sessionLog;
+      if(m && m.absences) state.absences=m.absences;
       if(m && m.lastFullBackupMs) state.lastFullBackupMs=m.lastFullBackupMs;
     }
     if(!state.anneeScolaire) state.anneeScolaire = defaultAnneeScolaire();
@@ -541,41 +549,51 @@ function currentSemesterBounds(){
   return periodBoundsFor("s2");
 }
 
-/* ---------------- Sessions (par classe, indépendantes du choix de classe dans le menu) ---------------- */
-function ensureSession(classe){
-  if(!state.sessions[classe]){ state.sessions[classe] = {startedAt: Date.now()}; persist(); }
+/* ---------------- Sessions (historique par classe, indépendant du choix de classe dans le menu) ---------------- */
+function activeSession(classe){
+  return state.sessionLog.find(function(s){ return s.classe===classe && s.endedAt===null; });
 }
 function startNewSession(classe){
-  state.sessions[classe] = {startedAt: Date.now()};
+  var existing = activeSession(classe);
+  if(existing) existing.endedAt = Date.now(); // ferme proprement une session oubliée avant d'en ouvrir une nouvelle
+  state.sessionLog.push({id:uid(), classe:classe, startedAt:Date.now(), endedAt:null});
   persist();
 }
 function endSession(classe){
-  delete state.sessions[classe];
+  var s = activeSession(classe);
+  if(s){ s.endedAt = Date.now(); persist(); }
+}
+function ensureSession(classe){
+  if(!activeSession(classe)) startNewSession(classe);
+}
+function isAbsent(studentId_, sessionId){
+  return state.absences.some(function(a){ return a.studentId===studentId_ && a.sessionId===sessionId; });
+}
+function toggleAbsence(studentId_, sessionId){
+  var idx = state.absences.findIndex(function(a){ return a.studentId===studentId_ && a.sessionId===sessionId; });
+  if(idx>-1){ state.absences.splice(idx,1); } else { state.absences.push({studentId:studentId_, sessionId:sessionId}); }
   persist();
 }
 function sessionCoverage(student){
-  var sess = state.sessions[student.classe];
-  if(!sess) return {pct:0, active:false, startedAt:null, categoriesFilled:0};
+  var sess = activeSession(student.classe);
+  if(!sess) return {pct:0, active:false, categoriesFilled:0, sessionId:null};
   var obs = studentObs(student.id, false).filter(function(o){ return o.ms>=sess.startedAt; });
   var cats={}; obs.forEach(function(o){cats[o.categorie]=true;});
   var categoriesFilled = Object.keys(cats).length;
-  return {pct:Math.round(100*categoriesFilled/5), active:true, startedAt:sess.startedAt, categoriesFilled:categoriesFilled};
+  return {pct:Math.round(100*categoriesFilled/5), active:true, categoriesFilled:categoriesFilled, sessionId:sess.id};
 }
 function confidenceIndex(student){
-  // Indice provisoire (V1) : à paramétrer plus finement dans une prochaine version.
+  // Proportion des séances de ce semestre (hors absences) où au moins un fait a été enregistré pour cet élève.
   var bounds = currentSemesterBounds();
-  var obs = studentObs(student.id, false).filter(function(o){ return o.ms>=bounds[0] && o.ms<=bounds[1]; });
-  var cats={}, dates={};
-  obs.forEach(function(o){ cats[o.categorie]=true; dates[o.dateISO]=true; });
-  var categoriesFilled = Object.keys(cats).length;
-  var sessionsObserved = Object.keys(dates).length;
-  var allSemesterSessions = classSessionDates(student.classe).filter(function(d){
-    var ms = new Date(d).getTime(); return ms>=bounds[0] && ms<=bounds[1];
+  var classSessions = state.sessionLog.filter(function(s){ return s.classe===student.classe && s.startedAt>=bounds[0] && s.startedAt<=bounds[1]; });
+  if(classSessions.length===0) return 0;
+  var applicable = classSessions.filter(function(s){ return !isAbsent(student.id, s.id); });
+  if(applicable.length===0) return 0;
+  var withFacts = applicable.filter(function(s){
+    var endBound = s.endedAt || Date.now();
+    return state.observations.some(function(o){ return o.studentId===student.id && o.ms>=s.startedAt && o.ms<=endBound; });
   });
-  var totalSessions = Math.max(1, allSemesterSessions.length);
-  var breadth = categoriesFilled/5;
-  var depth = Math.min(1, sessionsObserved/totalSessions);
-  return Math.round(100*(0.5*breadth + 0.5*depth));
+  return Math.round(100*withFacts.length/applicable.length);
 }
 
 /* ---------------- Data ops ---------------- */
@@ -675,20 +693,26 @@ function recordObservation(studentId_, categorie, factId){
   state.observations.push({id:uid(), studentId:studentId_, classe:s.classe, categorie:categorie, fait:factId, dateISO:stamp.dateISO, timeHM:stamp.timeHM, ms:stamp.ms});
   persist();
 }
-function isFactSelectedToday(studentId_, categorie, factId){
-  var today = todayISO();
-  return state.observations.some(function(o){ return o.studentId===studentId_ && o.categorie===categorie && o.fait===factId && o.dateISO===today; });
+function isFactSelectedThisSession(studentId_, categorie, factId){
+  var s = state.students.find(function(x){return x.id===studentId_;});
+  if(!s) return false;
+  var sess = activeSession(s.classe);
+  if(!sess) return false;
+  return state.observations.some(function(o){ return o.studentId===studentId_ && o.categorie===categorie && o.fait===factId && o.ms>=sess.startedAt; });
 }
 function toggleObservation(studentId_, categorie, factId){
-  var today = todayISO();
-  var idx = state.observations.findIndex(function(o){ return o.studentId===studentId_ && o.categorie===categorie && o.fait===factId && o.dateISO===today; });
+  var s = state.students.find(function(x){return x.id===studentId_;});
+  if(!s) return false;
+  ensureSession(s.classe);
+  var sess = activeSession(s.classe);
+  var idx = state.observations.findIndex(function(o){ return o.studentId===studentId_ && o.categorie===categorie && o.fait===factId && o.ms>=sess.startedAt; });
   if(idx>-1){
     state.observations.splice(idx,1);
     persist();
-    return false; // now unselected
+    return false;
   } else {
     recordObservation(studentId_, categorie, factId);
-    return true; // now selected
+    return true;
   }
 }
 
@@ -840,7 +864,7 @@ function renderClasseView(main){
     html = '<div class="empty"><h3>Classe vide</h3><p>Aucun élève actif dans cette classe.</p></div>';
     main.innerHTML = html; return;
   }
-  var sess = state.sessions[state.currentClasse];
+  var sess = activeSession(state.currentClasse);
   if(sess){
     var d = new Date(sess.startedAt);
     html += '<div class="session-bar active"><span class="txt">Session en cours depuis '+pad(d.getHours())+':'+pad(d.getMinutes())+'</span><button id="btnEndSession">Fin de session</button></div>';
@@ -857,9 +881,11 @@ function renderClasseView(main){
     var conf = confidenceIndex(s);
     var pri = isPriority(s);
     var watch = needsFollowUp(s);
+    var absent = sess ? isAbsent(s.id, sess.id) : false;
     var colorClass = watch ? "watch" : (pri ? "priority" : "");
-    html += '<div class="card '+colorClass+'" data-card="'+s.id+'">';
+    html += '<div class="card '+colorClass+(absent?" absent":"")+'" data-card="'+s.id+'">';
     html += '<button class="profile-btn" data-profile="'+s.id+'" title="Voir le profil">📊</button>';
+    if(sess){ html += '<button class="absent-btn'+(absent?" is-absent":"")+'" data-absent="'+s.id+'" title="Marquer absent(e) pour cette session">'+(absent?"✕":"○")+'</button>'; }
     html += '<div class="ring-wrap">'+ringSVG(sessCov.pct)+'<div class="ring-pct">'+conf+'%</div></div>';
     html += '<div class="name">'+escapeHtml(s.prenom)+'</div>';
     html += '</div>';
@@ -872,12 +898,21 @@ function renderClasseView(main){
   if(endBtn) endBtn.addEventListener("click", function(){ endSession(state.currentClasse); render(); });
   document.querySelectorAll("[data-card]").forEach(function(card){
     card.addEventListener("click", function(e){
-      if(e.target.closest("[data-profile]")) return;
+      if(e.target.closest("[data-profile]") || e.target.closest("[data-absent]")) return;
       openSheetCategories(card.getAttribute("data-card"));
     });
   });
   document.querySelectorAll("[data-profile]").forEach(function(btn){
     btn.addEventListener("click", function(e){ e.stopPropagation(); openProfile(btn.getAttribute("data-profile")); });
+  });
+  document.querySelectorAll("[data-absent]").forEach(function(btn){
+    btn.addEventListener("click", function(e){
+      e.stopPropagation();
+      var sessNow = activeSession(state.currentClasse);
+      if(!sessNow) return;
+      toggleAbsence(btn.getAttribute("data-absent"), sessNow.id);
+      render();
+    });
   });
 }
 function renderSuiviView(main){
@@ -997,7 +1032,7 @@ function renderSheet(){
     var html = "";
     c.groups.forEach(function(g, gi){
       g.facts.forEach(function(f){
-        var sel = isFactSelectedToday(sh.studentId, c.id, f.id);
+        var sel = isFactSelectedThisSession(sh.studentId, c.id, f.id);
         html += '<button class="fact-btn'+(sel?" selected":"")+'" data-fact="'+f.id+'">'+(sel?"✓ ":"")+escapeHtml(f.label)+'</button>';
       });
       if(gi < c.groups.length-1) html += '<div class="fact-sep"></div>';
@@ -1116,6 +1151,9 @@ function openDrawer(){
   document.getElementById("s2StartInput").value = state.semesterDates.s2Start;
   document.getElementById("s2EndInput").value = state.semesterDates.s2End;
   renderBackupBanner();
+  var expSel = document.getElementById("exportClasseSelect");
+  var classes = classesList();
+  expSel.innerHTML = classes.map(function(c){ return '<option value="'+encodeURIComponent(c)+'"'+(c===state.currentClasse?" selected":"")+'>'+escapeHtml(c)+'</option>'; }).join("") || '<option value="">Aucune classe</option>';
   document.getElementById("drawer").classList.add("open"); document.getElementById("overlay").classList.add("open");
 }
 function closeDrawerFn(){ document.getElementById("drawer").classList.remove("open"); document.getElementById("overlay").classList.remove("open"); }
@@ -1176,6 +1214,13 @@ document.getElementById("btnExportFull").addEventListener("click", function(){
     var s = state.students.find(function(x){return x.id===o.studentId;}) || {nom:"",prenom:""};
     lines.push(["OBS",o.classe,s.nom,s.prenom,"","","",o.dateISO,o.timeHM,o.categorie,o.fait].map(escCsv).join(","));
   });
+  state.sessionLog.forEach(function(sess){
+    lines.push(["SESSION",sess.classe,sess.id,String(sess.startedAt),sess.endedAt?String(sess.endedAt):""].map(escCsv).join(","));
+  });
+  state.absences.forEach(function(a){
+    var s = state.students.find(function(x){return x.id===a.studentId;}) || {classe:"",nom:"",prenom:""};
+    lines.push(["ABSENCE",s.classe,a.sessionId,s.nom,s.prenom].map(escCsv).join(","));
+  });
   download("ClasseVue_"+fileStamp()+".csv", lines.join("\n"));
   state.lastFullBackupMs = Date.now();
   persist();
@@ -1197,6 +1242,7 @@ document.getElementById("fileFull").addEventListener("change", function(e){
       var start = (headerCell==="type") ? 1 : 0;
       var newStudents=[], newObs=[];
       var newAnnee=null, newSemesterDates=null;
+      var newSessionLog=[], absenceRaw=[];
       var lookup = {}; // normalized "classe|nom|prenom" -> student
       function normKey(classe,nom,prenom){ return slugify(classe)+"|"+slugify(nom)+"|"+slugify(prenom); }
       var countEleve=0, countObs=0, countObsMatched=0;
@@ -1205,6 +1251,10 @@ document.getElementById("fileFull").addEventListener("change", function(e){
         if(r[0]==="META"){
           newAnnee = r[1]||null;
           newSemesterDates = {s1Start:r[2]||"", s1End:r[3]||"", s2Start:r[4]||"", s2End:r[5]||""};
+        } else if(r[0]==="SESSION"){
+          newSessionLog.push({id:r[2]||uid(), classe:r[1]||"", startedAt:parseInt(r[3],10)||Date.now(), endedAt: r[4]?parseInt(r[4],10):null});
+        } else if(r[0]==="ABSENCE"){
+          absenceRaw.push({classe:r[1]||"", sessionId:r[2]||"", nom:r[3]||"", prenom:r[4]||""});
         } else if(r[0]==="ELEVE"){
           var classe=r[1]||"", nom=r[2]||"", prenom=r[3]||"", naissance=r[4]||"", sexe=r[5]||"", statut=r[6]||"actif";
           var stud = {id:studentId(classe,nom,prenom,naissance), classe:classe, nom:nom, prenom:prenom, naissance:naissance, sexe:sexe, status:statut};
@@ -1227,12 +1277,19 @@ document.getElementById("fileFull").addEventListener("change", function(e){
           newObs.push({id:uid(), studentId:oid, classe:oClasse, categorie:oCat, fait:oFait, dateISO:oDate, timeHM:oHeure, ms:ms});
         }
       }
+      var newAbsences = [];
+      absenceRaw.forEach(function(a){
+        var match = lookup[normKey(a.classe,a.nom,a.prenom)];
+        if(match){ newAbsences.push({studentId:match.id, sessionId:a.sessionId}); }
+      });
       if(countEleve===0 && countObs===0){
         setStatus("statusFull","Ce fichier ne contient aucune donnée reconnue (vérifie qu'il s'agit bien d'un export ClasseVue).","err");
         e.target.value=""; return;
       }
       state.students = newStudents;
       state.observations = newObs;
+      state.sessionLog = newSessionLog;
+      state.absences = newAbsences;
       if(newAnnee) state.anneeScolaire = newAnnee;
       if(newSemesterDates) state.semesterDates = newSemesterDates;
       state.currentClasse = classesList()[0] || null;
@@ -1247,7 +1304,7 @@ document.getElementById("fileFull").addEventListener("change", function(e){
 
 document.getElementById("btnReset").addEventListener("click", function(){
   if(window.confirm("Effacer toutes les données de l'année scolaire "+state.anneeScolaire+" (toutes classes, toutes observations) ? Pense à exporter une sauvegarde avant. Cette action est irréversible.")){
-    state.students=[]; state.observations=[]; state.currentClasse=null; state.sessions={}; state.lastFullBackupMs=null; persist(); render();
+    state.students=[]; state.observations=[]; state.currentClasse=null; state.sessionLog=[]; state.absences=[]; state.lastFullBackupMs=null; persist(); render();
     renderBackupBanner();
     setStatus("statusFull","Données effacées. Aucune sauvegarde n'a été faite depuis.","ok");
   }
@@ -1256,14 +1313,16 @@ function setStatus(id,msg,cls){ var el=document.getElementById(id); el.textConte
 
 /* ---------------- Print profiles (PDF via navigateur), avec choix du contenu ---------------- */
 var printModal = document.getElementById("printModal");
+function sanitizeFilePart(s){ return (s||"").toString().trim().replace(/[\\/:*?"<>|]/g,"-").replace(/\s+/g,"-"); }
 document.getElementById("btnPrintProfiles").addEventListener("click", function(){ printModal.classList.add("open"); });
 document.getElementById("printModalCancel").addEventListener("click", function(){ printModal.classList.remove("open"); });
 document.getElementById("printModalGo").addEventListener("click", function(){
   var withRadar = document.getElementById("printOptRadar").checked;
   var withStats = document.getElementById("printOptStats").checked;
   var withFacts = document.getElementById("printOptFacts").checked;
+  var exportClasse = decodeURIComponent(document.getElementById("exportClasseSelect").value || "");
   printModal.classList.remove("open");
-  var students = activeStudents(state.currentClasse);
+  var students = activeStudents(exportClasse);
   var html = "";
   students.forEach(function(s){
     var cov = coverage(s);
@@ -1288,12 +1347,16 @@ document.getElementById("printModalGo").addEventListener("click", function(){
     html += '</div>';
   });
   document.getElementById("printView").innerHTML = html || "<p>Aucun élève.</p>";
+  var oldTitle = document.title;
+  document.title = "ClasseVue_Profils_"+sanitizeFilePart(exportClasse)+"_"+fileStamp();
   window.print();
+  setTimeout(function(){ document.title = oldTitle; }, 500);
 });
 
 /* ---------------- Export XLS (comparaison) ---------------- */
 document.getElementById("btnExportXls").addEventListener("click", function(){
-  var students = activeStudents(state.currentClasse);
+  var exportClasse = decodeURIComponent(document.getElementById("exportClasseSelect").value || "");
+  var students = activeStudents(exportClasse);
   var rows = "<tr><th>Classe</th><th>Nom</th><th>Prenom</th><th>Couverture</th>"+
     CATEGORIES.map(function(c){return "<th>"+c.label+"</th>";}).join("")+"</tr>";
   students.forEach(function(s){
@@ -1303,7 +1366,7 @@ document.getElementById("btnExportXls").addEventListener("click", function(){
       CATEGORIES.map(function(c){ var v=scores[c.id]; return "<td>"+(v===null?"":v)+"</td>"; }).join("")+"</tr>";
   });
   var html = "<html><head><meta charset='UTF-8'></head><body><table border='1'>"+rows+"</table></body></html>";
-  download("ClasseVueCompar_"+fileStamp()+".xls", html, "application/vnd.ms-excel");
+  download("ClasseVueCompar_"+sanitizeFilePart(exportClasse)+"_"+fileStamp()+".xls", html, "application/vnd.ms-excel");
 });
 
 loadPersisted().then(function(){ render(); }).catch(function(){ render(); });
