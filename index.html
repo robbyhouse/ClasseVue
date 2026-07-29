@@ -1379,7 +1379,7 @@ function renderProfile(){
   html += '<div class="evo-wrap"><div class="evo-title">Fiabilité des données '+info("confiance","Indice de confiance", "L'indice de confiance mesure la part des séances (de la période sélectionnée) où au moins un fait a été enregistré pour cet élève, absences exclues du calcul.<br><br>Calcul pour "+escapeHtml(s.prenom)+" : Ic = (séances avec au moins un fait ÷ séances où l'élève était présent) × 100 = ("+confSel.withFacts+" ÷ "+confSel.applicable+") × 100 = "+confSel.pct+"%.<br><br>Sur les "+confSel.total+" séances de la période, "+confSel.absent+" ont été déclarées comme absence — elles ne comptent ni pour ni contre l'indice, mais permettent de savoir si un écart vient d'un manque d'observation ou simplement d'absences.<br><br>En dessous de "+MIN_CONFIDENCE_FOR_TREND+"%, les tendances et le critère \"à aider\" ne sont pas calculés : il n'y a pas assez de données pour trancher.")+'</div>';
   html += '<div class="profile-stats">';
   html += '<div class="stat"><div class="val">'+confSel.pct+'%</div><div class="lab">Indice de confiance ('+confSel.withFacts+'/'+confSel.applicable+' séances)</div></div>';
-  html += '<div class="stat"><div class="val">'+confSel.absent+'/'+confSel.total+'</div><div class="lab">Absences déclarées</div></div>';
+  html += '<div class="stat"><div class="val">'+confSel.absent+'/'+confSel.total+'</div><div class="lab">Absences déclarées ('+confSel.applicable+' présences sur '+confSel.total+' séances)</div></div>';
   html += '</div></div>';
 
   // ---- 2. Statistiques de la période sélectionnée ----
@@ -1388,7 +1388,7 @@ function renderProfile(){
   html += '<div class="stat"><div class="val">'+(success===null?"—":success+"%")+'</div><div class="lab">Score de réussite</div></div>';
   html += '</div>';
   html += '<div class="radar-wrap">'+radarSVG(scoresCurrent, 260, scoresYear, objectives)+'</div>';
-  html += '<div style="text-align:center;font-size:11.5px;color:var(--ink-soft);margin-top:-14px;">Trait plein : '+(state.periodMode==="trimestre"?"trimestre":"semestre")+' en cours · Pointillé : année complète '+info("radar","Radar","Ce radar ne suit pas le menu déroulant ci-dessus : le trait plein correspond toujours au "+(state.periodMode==="trimestre"?"trimestre":"semestre")+" réellement en cours aujourd'hui, le pointillé à l'année complète, pour pouvoir comparer les deux en permanence.")+'</div>';
+  html += '<div style="text-align:center;margin-top:-8px;">'+info("radar","Radar","Ce radar ne suit pas le menu déroulant ci-dessus : le trait plein correspond toujours au "+(state.periodMode==="trimestre"?"trimestre":"semestre")+" réellement en cours aujourd'hui, le pointillé à l'année complète, pour pouvoir comparer les deux en permanence.")+'</div>';
   html += '</div>';
 
   // ---- 3. Tendances (toujours période réelle en cours, indépendant du menu) ----
