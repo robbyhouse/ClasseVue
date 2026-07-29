@@ -251,6 +251,15 @@
     </div>
 
     <div class="drawer-section">
+      <div class="section-title-row"><h3>Indices</h3></div>
+      <label class="mini-label">Fenêtre de tendance glissante (progression B)</label>
+      <select id="progressionWindowSelect" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:14px;">
+        <option value="2">2 dernières séances</option>
+        <option value="3">3 dernières séances</option>
+      </select>
+    </div>
+
+    <div class="drawer-section">
       <div class="section-title-row"><h3>Listes des classes (export Pronote)</h3><button class="info-btn" data-info="pronote">i</button></div>
       <input type="text" id="classeInputName" placeholder="Nom de la classe (ex: 3e1)" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:11px 12px;font-size:14px;margin-bottom:8px;">
       <button class="btn primary" id="btnImportStudents">Importer ce fichier pour cette classe (CSV Pronote)</button>
@@ -424,6 +433,7 @@ var state = {
   sessionLog: [],      // {id, classe, startedAt, endedAt(null tant qu'active)}
   absences: [],        // {sessionId, studentId}
   objectives: {},       // {studentId: {entree,difficulte,attention,ressources,finalisation}}
+  progressionWindow: 3, // nombre de séances récentes pour la tendance glissante
   lastFullBackupMs: null,
   suiviSort: {key:"nom", dir:"asc"},
   sheet: null,         // {studentId, mode:'categories'|'facts', categoryId}
@@ -472,7 +482,7 @@ function persist(){
       kvSet("students", JSON.stringify(state.students)),
       kvSet("observations", JSON.stringify(state.observations)),
       kvSet("objectives", JSON.stringify(state.objectives)),
-      kvSet("meta", JSON.stringify({currentClasse:state.currentClasse, anneeScolaire:state.anneeScolaire, periodMode:state.periodMode, periodDates:state.periodDates, sessionLog:state.sessionLog, absences:state.absences, lastFullBackupMs:state.lastFullBackupMs}))
+      kvSet("meta", JSON.stringify({currentClasse:state.currentClasse, anneeScolaire:state.anneeScolaire, periodMode:state.periodMode, periodDates:state.periodDates, sessionLog:state.sessionLog, absences:state.absences, lastFullBackupMs:state.lastFullBackupMs, progressionWindow:state.progressionWindow}))
     ]).then(function(){ setAutosaveStatus("Sauvegardé automatiquement sur cet appareil.", "ok"); })
       .catch(function(){ setAutosaveStatus("Sauvegarde automatique indisponible ici — pense à exporter en CSV.", "err"); });
   }, 300);
@@ -490,6 +500,7 @@ function loadPersisted(){
       if(m && m.sessionLog) state.sessionLog=m.sessionLog;
       if(m && m.absences) state.absences=m.absences;
       if(m && m.lastFullBackupMs) state.lastFullBackupMs=m.lastFullBackupMs;
+      if(m && m.progressionWindow) state.progressionWindow=m.progressionWindow;
     }
     if(res[3]) state.objectives = JSON.parse(res[3]);
     if(!state.anneeScolaire) state.anneeScolaire = defaultAnneeScolaire();
@@ -631,9 +642,8 @@ function sessionCoverage(student){
   var categoriesFilled = Object.keys(cats).length;
   return {pct:Math.round(100*categoriesFilled/5), active:true, categoriesFilled:categoriesFilled, sessionId:sess.id};
 }
-function confidenceIndex(student){
-  // Proportion des séances de ce semestre (hors absences) où au moins un fait a été enregistré pour cet élève.
-  var bounds = currentSemesterBounds();
+function confidenceIndexForBounds(student, bounds){
+  // Proportion des séances de cette fenêtre (hors absences) où au moins un fait a été enregistré pour cet élève.
   var classSessions = state.sessionLog.filter(function(s){ return s.classe===student.classe && s.startedAt>=bounds[0] && s.startedAt<=bounds[1]; });
   if(classSessions.length===0) return 0;
   var applicable = classSessions.filter(function(s){ return !isAbsent(student.id, s.id); });
@@ -643,6 +653,89 @@ function confidenceIndex(student){
     return state.observations.some(function(o){ return o.studentId===student.id && o.ms>=s.startedAt && o.ms<=endBound; });
   });
   return Math.round(100*withFacts.length/applicable.length);
+}
+function confidenceIndex(student){ return confidenceIndexForBounds(student, currentSemesterBounds()); }
+
+/* ---------------- Score de réussite, progression, critère "à aider" (double discordance) ---------------- */
+var MIN_CONFIDENCE_FOR_TREND = 40; // en dessous, on ne calcule pas de tendance (pas assez fiable)
+var SUCCESS_THRESHOLD = 50;        // score de réussite considéré "bas"
+
+function successScoreForBounds(studentId_, bounds){
+  var scores = dimensionScoresForBounds(studentId_, bounds);
+  var vals = CATEGORIES.map(function(c){return scores[c.id];}).filter(function(v){return v!==null && v!==undefined;});
+  if(vals.length===0) return null;
+  return Math.round(vals.reduce(function(a,b){return a+b;},0)/vals.length);
+}
+function currentPeriodIndex(){
+  var now = Date.now();
+  var n = periodCount();
+  for(var i=1;i<=n;i++){ var b = periodBoundsFor("p"+i); if(now>=b[0] && now<=b[1]) return i; }
+  return n;
+}
+function previousPeriodBounds(){
+  var idx = currentPeriodIndex();
+  if(idx<=1) return null;
+  return periodBoundsFor("p"+(idx-1));
+}
+function progressionA(student){
+  // Écart du score de réussite entre la période en cours et la période précédente.
+  var curBounds = currentSemesterBounds();
+  var prevBounds = previousPeriodBounds();
+  if(!prevBounds) return null;
+  if(confidenceIndexForBounds(student,curBounds) < MIN_CONFIDENCE_FOR_TREND) return null;
+  if(confidenceIndexForBounds(student,prevBounds) < MIN_CONFIDENCE_FOR_TREND) return null;
+  var curScore = successScoreForBounds(student.id, curBounds);
+  var prevScore = successScoreForBounds(student.id, prevBounds);
+  if(curScore===null || prevScore===null) return null;
+  return Math.round(curScore - prevScore);
+}
+function sessionScoreValue(studentId_, session){
+  var endBound = session.endedAt || Date.now();
+  var vals = state.observations.filter(function(o){ return o.studentId===studentId_ && o.ms>=session.startedAt && o.ms<=endBound; })
+    .map(function(o){ var f=factById(o.categorie,o.fait); return f?f.v:null; }).filter(function(v){return v!==null;});
+  if(vals.length===0) return null;
+  return vals.reduce(function(a,b){return a+b;},0)/vals.length;
+}
+function sessionsWithScores(student, bounds){
+  return state.sessionLog.filter(function(s){
+    return s.classe===student.classe && s.startedAt>=bounds[0] && s.startedAt<=bounds[1] && !isAbsent(student.id, s.id);
+  }).sort(function(a,b){return a.startedAt-b.startedAt;})
+    .map(function(s){ return {session:s, score: sessionScoreValue(student.id, s)}; })
+    .filter(function(x){return x.score!==null;});
+}
+function progressionBSimple(student){
+  // Moyenne des N dernières séances moins moyenne des séances précédentes de la période (N = state.progressionWindow).
+  var list = sessionsWithScores(student, currentSemesterBounds());
+  var n = state.progressionWindow || 3;
+  if(list.length < n+2) return null;
+  var recent = list.slice(-n), prior = list.slice(0, list.length-n);
+  if(prior.length===0) return null;
+  var recentAvg = recent.reduce(function(a,x){return a+x.score;},0)/recent.length;
+  var priorAvg = prior.reduce(function(a,x){return a+x.score;},0)/prior.length;
+  return Math.round(recentAvg - priorAvg);
+}
+function progressionBTrend(student){
+  // Droite de tendance (régression linéaire des moindres carrés) sur les scores de séance de la période en cours.
+  var list = sessionsWithScores(student, currentSemesterBounds());
+  if(list.length < 3) return null;
+  var n = list.length, sumX=0,sumY=0,sumXY=0,sumXX=0;
+  list.forEach(function(item,i){ sumX+=i; sumY+=item.score; sumXY+=i*item.score; sumXX+=i*i; });
+  var denom = (n*sumXX - sumX*sumX);
+  if(denom===0) return null;
+  var slope = (n*sumXY - sumX*sumY)/denom;
+  var intercept = (sumY - slope*sumX)/n;
+  return { slope: slope, intercept: intercept, points: list.map(function(item,i){return {x:i,y:item.score};}) };
+}
+function needsHelp(student){
+  // Double discordance (RTI) : score bas ET pas de progression, avec assez de données pour trancher.
+  var bounds = currentSemesterBounds();
+  if(confidenceIndexForBounds(student,bounds) < MIN_CONFIDENCE_FOR_TREND) return false;
+  var success = successScoreForBounds(student.id, bounds);
+  if(success===null || success >= SUCCESS_THRESHOLD) return false;
+  var trend = progressionA(student);
+  if(trend===null) trend = progressionBSimple(student);
+  if(trend===null) return false;
+  return trend <= 0;
 }
 
 /* ---------------- Data ops ---------------- */
@@ -938,6 +1031,22 @@ function radarSVG(scores, size, scoresYear, objectives){
   }
   return '<svg viewBox="0 0 '+size+' '+size+'" width="'+size+'" height="'+size+'">'+grid+axisLines+yearPoly+poly+dots+objPoly+objDots+labelsHtml+legend+'</svg>';
 }
+function trendSparkSVG(data, width, height){
+  width=width||280; height=height||70;
+  if(!data || data.points.length===0) return '<div class="hint" style="font-size:12px;color:var(--ink-soft);">Pas assez de séances dans la période pour tracer une tendance.</div>';
+  var maxX = data.points[data.points.length-1].x || 1;
+  var pad=10;
+  function X(x){ return pad + (x/Math.max(1,maxX))*(width-2*pad); }
+  function Y(y){ y=Math.max(0,Math.min(100,y)); return height-pad - (y/100)*(height-2*pad); }
+  var path = data.points.map(function(p,i){ return (i===0?"M":"L")+X(p.x).toFixed(1)+","+Y(p.y).toFixed(1); }).join(" ");
+  var dots = data.points.map(function(p){ return '<circle cx="'+X(p.x).toFixed(1)+'" cy="'+Y(p.y).toFixed(1)+'" r="2.5" fill="var(--accent)"/>'; }).join("");
+  var y0 = data.intercept, y1 = data.intercept + data.slope*maxX;
+  var trendLine = '<line x1="'+X(0).toFixed(1)+'" y1="'+Y(y0).toFixed(1)+'" x2="'+X(maxX).toFixed(1)+'" y2="'+Y(y1).toFixed(1)+'" stroke="#D9A62E" stroke-width="1.6" stroke-dasharray="4,3"/>';
+  return '<svg viewBox="0 0 '+width+' '+height+'" width="'+width+'" height="'+height+'">'+
+    '<line x1="'+pad+'" y1="'+(height-pad)+'" x2="'+(width-pad)+'" y2="'+(height-pad)+'" stroke="#E4E1D8" stroke-width="1"/>'+
+    trendLine+'<path d="'+path+'" fill="none" stroke="var(--accent)" stroke-width="1.4"/>'+dots+
+    '</svg>';
+}
 
 /* ---------------- Rendering ---------------- */
 function renderTabs(){
@@ -1037,7 +1146,9 @@ function renderSuiviView(main){
     var cov = coverage(s);
     var pri = isPriority(s);
     var watch = needsFollowUp(s);
-    return {s:s, cov:cov, pri:pri, watch:watch};
+    var success = successScoreForBounds(s.id, currentSemesterBounds());
+    var aider = needsHelp(s);
+    return {s:s, cov:cov, pri:pri, watch:watch, success:success, aider:aider};
   });
   var key = state.suiviSort.key, dir = state.suiviSort.dir==="asc"?1:-1;
   rows.sort(function(a,b){
@@ -1046,6 +1157,8 @@ function renderSuiviView(main){
     else if(key==="couverture"){ va=a.cov.pct; vb=b.cov.pct; }
     else if(key==="priorite"){ va=a.pri?1:0; vb=b.pri?1:0; }
     else if(key==="asuivre"){ va=a.watch?1:0; vb=b.watch?1:0; }
+    else if(key==="reussite"){ va=a.success===null?-1:a.success; vb=b.success===null?-1:b.success; }
+    else if(key==="aider"){ va=a.aider?1:0; vb=b.aider?1:0; }
     else if(key==="categories"){ va=a.cov.categoriesFilled; vb=b.cov.categoriesFilled; }
     else if(key==="derniere"){ va=a.cov.lastDate||""; vb=b.cov.lastDate||""; }
     else { va=0; vb=0; }
@@ -1056,14 +1169,16 @@ function renderSuiviView(main){
     return '<th class="sortable" data-sort="'+k+'">'+labelTxt+' <span class="arrow">'+arrow+'</span></th>';
   }
   html += '<div class="table-wrap"><table><thead><tr>'+
-    th("Élève","nom")+th("Couverture","couverture")+th("Priorité","priorite")+th("À suivre","asuivre")+th("Catégories","categories")+th("Dernière obs.","derniere")+'<th></th>'+
+    th("Élève","nom")+th("Couverture","couverture")+th("Réussite","reussite")+th("Priorité","priorite")+th("À suivre","asuivre")+th("À aider","aider")+th("Catégories","categories")+th("Dernière obs.","derniere")+'<th></th>'+
     '</tr></thead><tbody>';
   rows.forEach(function(r){
     html += '<tr>'+
       '<td>'+escapeHtml(r.s.prenom)+' '+escapeHtml(r.s.nom.toUpperCase())+'</td>'+
       '<td>'+r.cov.pct+'%</td>'+
+      '<td>'+(r.success===null?"—":r.success+"%")+'</td>'+
       '<td>'+(r.pri?'<span class="badge pri">à observer</span>':'—')+'</td>'+
       '<td>'+(r.watch?'<span class="badge pri" style="background:var(--watch-bg);color:#8a5a12;">à suivre</span>':'—')+'</td>'+
+      '<td>'+(r.aider?'<span class="badge pri" style="background:#F6DCD8;color:var(--neg);">à aider</span>':'—')+'</td>'+
       '<td>'+r.cov.categoriesFilled+' / 5</td>'+
       '<td>'+(r.cov.lastDate||"—")+'</td>'+
       '<td><button class="link-btn" data-profile2="'+r.s.id+'">Profil →</button></td>'+
@@ -1220,19 +1335,37 @@ function renderProfile(){
   document.getElementById("profileName").textContent = s.prenom+" "+s.nom.toUpperCase()+" — "+s.classe;
   var cov = coverage(s);
   var pri = isPriority(s);
+  var conf = confidenceIndex(s);
+  var success = successScoreForBounds(s.id, currentSemesterBounds());
+  var progA = progressionA(s);
+  var progBs = progressionBSimple(s);
+  var progBt = progressionBTrend(s);
+  var aider = needsHelp(s);
   var scoresCurrent = dimensionScoresForBounds(s.id, currentSemesterBounds());
   var scoresYear = dimensionScoresForBounds(s.id, [0,Infinity]);
   var objectives = state.objectives[s.id] || null;
   var evo = monthlyEvolution(s.id);
   var obsList = studentObs(s.id, true).slice().sort(function(a,b){return b.ms-a.ms;});
 
+  function fmtDelta(v){ if(v===null) return "—"; return (v>0?"+":"")+v; }
+
   var html = '<div class="period-row">'+periodSelectorHtml()+'</div>';
   html += '<div class="profile-stats">';
   html += '<div class="stat"><div class="val">'+cov.pct+'%</div><div class="lab">Couverture</div></div>';
+  html += '<div class="stat"><div class="val">'+(success===null?"—":success+"%")+'</div><div class="lab">Score de réussite</div></div>';
+  html += '<div class="stat"><div class="val">'+fmtDelta(progA)+'</div><div class="lab">Progression vs période préc.</div></div>';
+  html += '<div class="stat"><div class="val">'+fmtDelta(progBs)+'</div><div class="lab">Tendance récente ('+(state.progressionWindow||3)+' séances)</div></div>';
+  html += '<div class="stat"><div class="val">'+(aider?"Oui":"Non")+'</div><div class="lab">À aider</div></div>';
   html += '<div class="stat"><div class="val">'+(pri?"Oui":"Non")+'</div><div class="lab">À observer en priorité</div></div>';
   html += '</div>';
   html += '<div class="radar-wrap">'+radarSVG(scoresCurrent, 260, scoresYear, objectives)+'</div>';
   html += '<div style="text-align:center;font-size:11.5px;color:var(--ink-soft);margin-top:-14px;margin-bottom:16px;">Trait plein : '+(state.periodMode==="trimestre"?"trimestre":"semestre")+' en cours · Pointillé : année complète</div>';
+
+  html += '<div class="evo-wrap"><div class="evo-title">Tendance de la période (droite de régression)</div>';
+  html += trendSparkSVG(progBt);
+  if(progBt){ html += '<div style="font-size:12px;color:var(--ink-soft);margin-top:6px;">Pente : '+(progBt.slope>=0?"+":"")+progBt.slope.toFixed(1)+' points par séance.</div>'; }
+  if(conf < MIN_CONFIDENCE_FOR_TREND){ html += '<div style="font-size:12px;color:var(--neg);margin-top:6px;">Indice de confiance trop bas ('+conf+'%) pour interpréter ces tendances avec certitude.</div>'; }
+  html += '</div>';
 
   html += '<div class="evo-wrap"><div class="evo-title">Évolution mensuelle (période sélectionnée)</div>';
   if(evo.length===0){ html += '<div class="hint" style="color:var(--ink-soft);font-size:13px;">Pas encore d\'observation sur cette période.</div>'; }
@@ -1313,6 +1446,7 @@ function renderAnneeSummary(){
 function openDrawer(){
   renderAnneeSummary();
   renderBackupBanner();
+  document.getElementById("progressionWindowSelect").value = String(state.progressionWindow||3);
   var expSel = document.getElementById("exportClasseSelect");
   var classes = classesList();
   expSel.innerHTML = classes.map(function(c){ return '<option value="'+encodeURIComponent(c)+'"'+(c===state.currentClasse?" selected":"")+'>'+escapeHtml(c)+'</option>'; }).join("") || '<option value="">Aucune classe</option>';
@@ -1320,6 +1454,10 @@ function openDrawer(){
 }
 function closeDrawerFn(){ document.getElementById("drawer").classList.remove("open"); document.getElementById("overlay").classList.remove("open"); }
 document.getElementById("btnDrawer").addEventListener("click", openDrawer);
+document.getElementById("progressionWindowSelect").addEventListener("change", function(){
+  state.progressionWindow = parseInt(this.value,10)||3;
+  persist();
+});
 document.getElementById("btnCloseDrawer").addEventListener("click", closeDrawerFn);
 
 /* ---------------- Modifier l'année scolaire (modal dédié) ---------------- */
@@ -1589,12 +1727,16 @@ document.getElementById("printModalGo").addEventListener("click", function(){
 document.getElementById("btnExportXls").addEventListener("click", function(){
   var exportClasse = decodeURIComponent(document.getElementById("exportClasseSelect").value || "");
   var students = activeStudents(exportClasse);
-  var rows = "<tr><th>Classe</th><th>Nom</th><th>Prenom</th><th>Couverture</th>"+
+  var rows = "<tr><th>Classe</th><th>Nom</th><th>Prenom</th><th>Couverture</th><th>Reussite</th><th>Progression</th><th>A aider</th>"+
     CATEGORIES.map(function(c){return "<th>"+c.label+"</th>";}).join("")+"</tr>";
   students.forEach(function(s){
     var cov = coverage(s);
     var scores = dimensionScores(s.id, true);
+    var success = successScoreForBounds(s.id, currentSemesterBounds());
+    var prog = progressionA(s); if(prog===null) prog = progressionBSimple(s);
+    var aider = needsHelp(s);
     rows += "<tr><td>"+escapeHtml(s.classe)+"</td><td>"+escapeHtml(s.nom)+"</td><td>"+escapeHtml(s.prenom)+"</td><td>"+cov.pct+"</td>"+
+      "<td>"+(success===null?"":success)+"</td><td>"+(prog===null?"":prog)+"</td><td>"+(aider?"Oui":"Non")+"</td>"+
       CATEGORIES.map(function(c){ var v=scores[c.id]; return "<td>"+(v===null?"":v)+"</td>"; }).join("")+"</tr>";
   });
   var html = "<html><head><meta charset='UTF-8'></head><body><table border='1'>"+rows+"</table></body></html>";
