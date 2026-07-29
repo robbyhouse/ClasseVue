@@ -130,15 +130,16 @@
 
   /* suivi table */
   .table-wrap{background:var(--paper-raised);border-radius:var(--radius);box-shadow:var(--shadow);overflow-x:auto;}
-  table{width:100%;border-collapse:collapse;font-size:13px;min-width:560px;}
-  th,td{padding:9px 8px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap;}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:560px;}
+  th,td{padding:7px 4px;text-align:left;border-bottom:1px solid var(--line);}
+  td{white-space:nowrap;}
   th:first-child,td:first-child{position:sticky;left:0;z-index:2;background:var(--paper-raised);box-shadow:2px 0 4px rgba(0,0,0,0.06);}
   th:first-child{z-index:3;}
   .table-wrap select{padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;background:#fff;}
   .axis-check-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px;}
   .axis-check-row:last-child{border-bottom:none;}
   .axis-check-row input{width:18px;height:18px;}
-  th{color:var(--ink-soft);font-size:11px;text-transform:uppercase;letter-spacing:0.3px;font-weight:700;}
+  th{color:var(--ink-soft);font-size:9px;text-transform:none;letter-spacing:0;font-weight:700;white-space:normal;line-height:1.25;vertical-align:bottom;max-width:64px;}
   .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;}
   .badge.pri{background:var(--priority-bg);color:var(--accent);}
   .link-btn{background:none;border:none;color:var(--accent);font-weight:700;font-size:12.5px;cursor:pointer;}
@@ -1825,7 +1826,8 @@ document.getElementById("btnExportFull").addEventListener("click", function(){
     var s = state.students.find(function(x){return x.id===studId;});
     if(!s) return;
     var o = state.objectives[studId];
-    lines.push(["OBJECTIF",s.classe,s.nom,s.prenom,o.entree||"",o.difficulte||"",o.attention||"",o.ressources||"",o.finalisation||""].map(escCsv).join(","));
+    var vals = CATEGORIES.map(function(c){ return o[c.id]||""; });
+    lines.push(["OBJECTIF",s.classe,s.nom,s.prenom].concat(vals).map(escCsv).join(","));
   });
   download("ClasseVueBackup_"+fileStamp()+".csv", lines.join("\n"));
   state.lastFullBackupMs = Date.now();
@@ -1863,7 +1865,7 @@ document.getElementById("fileFull").addEventListener("change", function(e){
         } else if(r[0]==="ABSENCE"){
           absenceRaw.push({classe:r[1]||"", sessionId:r[2]||"", nom:r[3]||"", prenom:r[4]||""});
         } else if(r[0]==="OBJECTIF"){
-          objectifRaw.push({classe:r[1]||"", nom:r[2]||"", prenom:r[3]||"", entree:r[4]||"", difficulte:r[5]||"", attention:r[6]||"", ressources:r[7]||"", finalisation:r[8]||""});
+          objectifRaw.push({classe:r[1]||"", nom:r[2]||"", prenom:r[3]||"", raw:r.slice(4)});
         } else if(r[0]==="ELEVE"){
           var classe=r[1]||"", nom=r[2]||"", prenom=r[3]||"", naissance=r[4]||"", sexe=r[5]||"", statut=r[6]||"actif";
           var stud = {id:studentId(classe,nom,prenom,naissance), classe:classe, nom:nom, prenom:prenom, naissance:naissance, sexe:sexe, status:statut};
@@ -1896,8 +1898,9 @@ document.getElementById("fileFull").addEventListener("change", function(e){
         var match = lookup[normKey(o.classe,o.nom,o.prenom)];
         if(!match) return;
         var entry = {};
-        ["entree","difficulte","attention","ressources","finalisation"].forEach(function(k){
-          if(o[k]) entry[k] = parseInt(o[k],10);
+        CATEGORIES.forEach(function(c, idx){
+          var v = o.raw[idx];
+          if(v){ entry[c.id] = parseInt(v,10); }
         });
         newObjectives[match.id] = entry;
       });
