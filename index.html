@@ -652,18 +652,18 @@ function sessionCoverage(student){
   var categoriesFilled = Object.keys(cats).length;
   return {pct:Math.round(100*categoriesFilled/5), active:true, categoriesFilled:categoriesFilled, sessionId:sess.id};
 }
-function confidenceIndexForBounds(student, bounds){
+function confidenceDetail(student, bounds){
   // Proportion des séances de cette fenêtre (hors absences) où au moins un fait a été enregistré pour cet élève.
   var classSessions = state.sessionLog.filter(function(s){ return s.classe===student.classe && s.startedAt>=bounds[0] && s.startedAt<=bounds[1]; });
-  if(classSessions.length===0) return 0;
   var applicable = classSessions.filter(function(s){ return !isAbsent(student.id, s.id); });
-  if(applicable.length===0) return 0;
+  if(applicable.length===0) return {pct:0, withFacts:0, applicable:0};
   var withFacts = applicable.filter(function(s){
     var endBound = s.endedAt || Date.now();
     return state.observations.some(function(o){ return o.studentId===student.id && o.ms>=s.startedAt && o.ms<=endBound; });
   });
-  return Math.round(100*withFacts.length/applicable.length);
+  return {pct: Math.round(100*withFacts.length/applicable.length), withFacts: withFacts.length, applicable: applicable.length};
 }
+function confidenceIndexForBounds(student, bounds){ return confidenceDetail(student, bounds).pct; }
 function confidenceIndex(student){ return confidenceIndexForBounds(student, currentSemesterBounds()); }
 
 /* ---------------- Score de réussite, progression, critère "à aider" (double discordance) ---------------- */
@@ -746,6 +746,10 @@ function needsHelp(student){
   if(trend===null) trend = progressionBSimple(student);
   if(trend===null) return false;
   return trend <= 0;
+}
+function needsObservation(student){
+  // Pas assez de données fiables sur la période en cours pour se prononcer : c'est un problème de collecte, pas de difficulté.
+  return confidenceIndex(student) < MIN_CONFIDENCE_FOR_TREND;
 }
 
 /* ---------------- Data ops ---------------- */
@@ -893,21 +897,6 @@ function coverage(student){
   var categoriesFilled = Object.keys(cats).length;
   var pct = Math.round(100*(categoriesFilled/5));
   return {pct:pct, sessionsObserved:sessionsObserved, totalSessions:Math.max(1,allSessions.length), categoriesFilled:categoriesFilled, lastDate: obs.length? obs.map(function(o){return o.dateISO;}).sort().slice(-1)[0] : null};
-}
-function needsFollowUp(student){
-  // Placeholder V1 : seuil provisoire en attendant que les critères précis soient définis.
-  var obs = studentObs(student.id, false);
-  var negCount = obs.filter(function(o){ var f=factById(o.categorie,o.fait); return f && f.v<=50; }).length;
-  return negCount>=3;
-}
-function isPriority(student){
-  var cov = coverage(student);
-  if(cov.pct < 40) return true;
-  var allSessions = classSessionDates(student.classe);
-  if(allSessions.length===0) return false;
-  var lastIdx = cov.lastDate ? allSessions.indexOf(cov.lastDate) : -1;
-  var sessionsSince = lastIdx===-1 ? allSessions.length : (allSessions.length-1-lastIdx);
-  return sessionsSince>=3;
 }
 function dimensionScoresForBounds(studentId_, bounds){
   var obs = state.observations.filter(function(o){ return o.studentId===studentId_ && o.ms>=bounds[0] && o.ms<=bounds[1]; });
@@ -1105,17 +1094,17 @@ function renderClasseView(main){
     html += '<div class="session-bar no-session"><span class="txt">Aucune session en cours pour '+escapeHtml(state.currentClasse)+'</span><button id="btnStartSession">Démarrer une session</button></div>';
   }
   html += '<div style="margin-bottom:8px;">'+
-    '<span class="legend-chip"><span class="legend-dot" style="background:var(--watch-bg);border:1px solid #E0B563;"></span>À suivre</span>'+
-    '<span class="legend-chip"><span class="legend-dot" style="background:var(--priority-bg);border:1px solid #A9C7DC;"></span>Manque de faits</span>'+
+    '<span class="legend-chip"><span class="legend-dot" style="background:var(--watch-bg);border:1px solid #E0B563;"></span>À aider</span>'+
+    '<span class="legend-chip"><span class="legend-dot" style="background:var(--priority-bg);border:1px solid #A9C7DC;"></span>À observer (pas assez de données)</span>'+
     '</div>';
   html += '<div class="grid">';
   students.forEach(function(s){
     var sessCov = sessionCoverage(s);
     var conf = confidenceIndex(s);
-    var pri = isPriority(s);
-    var watch = needsFollowUp(s);
+    var obs_ = needsObservation(s);
+    var aider = needsHelp(s);
     var absent = sess ? isAbsent(s.id, sess.id) : false;
-    var colorClass = watch ? "watch" : (pri ? "priority" : "");
+    var colorClass = aider ? "watch" : (obs_ ? "priority" : "");
     html += '<div class="card '+colorClass+(absent?" absent":"")+'" data-card="'+s.id+'">';
     html += '<button class="profile-btn" data-profile="'+s.id+'" title="Voir le profil">📊</button>';
     if(sess){ html += '<button class="absent-btn'+(absent?" is-absent":"")+'" data-absent="'+s.id+'" title="Marquer absent(e) pour cette session">'+(absent?"✕":"○")+'</button>'; }
@@ -1154,19 +1143,18 @@ function renderSuiviView(main){
   if(students.length===0){ main.innerHTML = html+'<div class="empty"><h3>Rien à afficher</h3></div>'; bindPeriodSelector(); return; }
   var rows = students.map(function(s){
     var cov = coverage(s);
-    var pri = isPriority(s);
-    var watch = needsFollowUp(s);
-    var success = successScoreForBounds(s.id, currentSemesterBounds());
+    var conf = confidenceDetail(s, currentSemesterBounds());
+    var observer = needsObservation(s);
+    var success = successScoreForBounds(s.id, periodBounds());
     var aider = needsHelp(s);
-    return {s:s, cov:cov, pri:pri, watch:watch, success:success, aider:aider};
+    return {s:s, cov:cov, conf:conf, observer:observer, success:success, aider:aider};
   });
   var key = state.suiviSort.key, dir = state.suiviSort.dir==="asc"?1:-1;
   rows.sort(function(a,b){
     var va, vb;
     if(key==="nom"){ va=(a.s.nom+a.s.prenom).toLowerCase(); vb=(b.s.nom+b.s.prenom).toLowerCase(); }
-    else if(key==="couverture"){ va=a.cov.pct; vb=b.cov.pct; }
-    else if(key==="priorite"){ va=a.pri?1:0; vb=b.pri?1:0; }
-    else if(key==="asuivre"){ va=a.watch?1:0; vb=b.watch?1:0; }
+    else if(key==="confiance"){ va=a.conf.pct; vb=b.conf.pct; }
+    else if(key==="observer"){ va=a.observer?1:0; vb=b.observer?1:0; }
     else if(key==="reussite"){ va=a.success===null?-1:a.success; vb=b.success===null?-1:b.success; }
     else if(key==="aider"){ va=a.aider?1:0; vb=b.aider?1:0; }
     else if(key==="categories"){ va=a.cov.categoriesFilled; vb=b.cov.categoriesFilled; }
@@ -1179,16 +1167,15 @@ function renderSuiviView(main){
     return '<th class="sortable" data-sort="'+k+'">'+labelTxt+' <span class="arrow">'+arrow+'</span></th>';
   }
   html += '<div class="table-wrap"><table><thead><tr>'+
-    th("Élève","nom")+th("Couverture","couverture")+th("Réussite","reussite")+th("Priorité","priorite")+th("À suivre","asuivre")+th("À aider","aider")+th("Catégories","categories")+th("Dernière obs.","derniere")+'<th></th>'+
+    th("Élève","nom")+th("Confiance","confiance")+th("Réussite (période sél.)","reussite")+th("À observer","observer")+th("À aider","aider")+th("Catégories","categories")+th("Dernière obs.","derniere")+'<th></th>'+
     '</tr></thead><tbody>';
   rows.forEach(function(r){
     html += '<tr>'+
       '<td>'+escapeHtml(r.s.prenom)+' '+escapeHtml(r.s.nom.toUpperCase())+'</td>'+
-      '<td>'+r.cov.pct+'%</td>'+
+      '<td>'+r.conf.pct+'% ('+r.conf.withFacts+'/'+r.conf.applicable+')</td>'+
       '<td>'+(r.success===null?"—":r.success+"%")+'</td>'+
-      '<td>'+(r.pri?'<span class="badge pri">à observer</span>':'—')+'</td>'+
-      '<td>'+(r.watch?'<span class="badge pri" style="background:var(--watch-bg);color:#8a5a12;">à suivre</span>':'—')+'</td>'+
-      '<td>'+(r.aider?'<span class="badge pri" style="background:#F6DCD8;color:var(--neg);">à aider</span>':'—')+'</td>'+
+      '<td>'+(r.observer?'<span class="badge pri" style="background:var(--priority-bg);color:var(--accent);">à observer</span>':'—')+'</td>'+
+      '<td>'+(r.aider?'<span class="badge pri" style="background:var(--watch-bg);color:#8a5a12;">à aider</span>':'—')+'</td>'+
       '<td>'+r.cov.categoriesFilled+' / 5</td>'+
       '<td>'+(r.cov.lastDate||"—")+'</td>'+
       '<td><button class="link-btn" data-profile2="'+r.s.id+'">Profil →</button></td>'+
@@ -1339,14 +1326,15 @@ function openProfile(studentId_){
 }
 function closeProfile(){ profileOverlay.classList.remove("open"); state.profileStudentId=null; }
 document.getElementById("profileClose").addEventListener("click", closeProfile);
+var dynamicInfoText = ""; // rempli à la volée pour les info-bulles qui dépendent de l'élève affiché
 function renderProfile(){
   var s = state.students.find(function(x){return x.id===state.profileStudentId;});
   if(!s) return;
   document.getElementById("profileName").textContent = s.prenom+" "+s.nom.toUpperCase()+" — "+s.classe;
-  var cov = coverage(s);
-  var pri = isPriority(s);
-  var conf = confidenceIndex(s);
-  var success = successScoreForBounds(s.id, currentSemesterBounds());
+  var confSel = confidenceDetail(s, periodBounds());
+  var confCur = confidenceDetail(s, currentSemesterBounds());
+  var observer = needsObservation(s);
+  var success = successScoreForBounds(s.id, periodBounds());
   var progA = progressionA(s);
   var progBs = progressionBSimple(s);
   var progBt = progressionBTrend(s);
@@ -1358,26 +1346,53 @@ function renderProfile(){
   var obsList = studentObs(s.id, true).slice().sort(function(a,b){return b.ms-a.ms;});
 
   function fmtDelta(v){ if(v===null) return "—"; return (v>0?"+":"")+v; }
+  function info(key, title, dynamicText){
+    var attr = dynamicText ? ' data-info-dynamic="1"' : '';
+    if(dynamicText) window["__dyn_"+key] = dynamicText;
+    return '<button class="info-btn" data-info="'+key+'" data-info-title="'+escapeHtml(title)+'"'+attr+' style="margin-left:6px;">i</button>';
+  }
 
   var html = '<div class="period-row">'+periodSelectorHtml()+'</div>';
+
+  // ---- 1. Fiabilité des données ----
+  html += '<div class="evo-wrap"><div class="evo-title">Fiabilité des données '+info("confiance","Indice de confiance", "L'indice de confiance mesure la part des séances (de la période sélectionnée) où au moins un fait a été enregistré pour cet élève, absences exclues.<br><br>Calcul pour "+escapeHtml(s.prenom)+" : Ic = (séances avec au moins un fait ÷ séances où l'élève était présent) × 100 = ("+confSel.withFacts+" ÷ "+confSel.applicable+") × 100 = "+confSel.pct+"%.<br><br>En dessous de "+MIN_CONFIDENCE_FOR_TREND+"%, les tendances et le critère \"à aider\" ne sont pas calculés : il n'y a pas assez de données pour trancher.")+'</div>';
   html += '<div class="profile-stats">';
-  html += '<div class="stat"><div class="val">'+cov.pct+'%</div><div class="lab">Couverture</div></div>';
+  html += '<div class="stat"><div class="val">'+confSel.pct+'%</div><div class="lab">Indice de confiance ('+confSel.withFacts+'/'+confSel.applicable+' séances)</div></div>';
+  html += '</div></div>';
+
+  // ---- 2. Statistiques de la période sélectionnée ----
+  html += '<div class="evo-wrap"><div class="evo-title">Statistiques — période sélectionnée '+info("reussite","Score de réussite","Moyenne des 5 scores d'axes (radar) sur la période choisie ci-dessus. Chaque fait observé porte un pourcentage (25/50/75/100) ; le score de réussite est la moyenne de tous les faits enregistrés sur la période, tous critères confondus.")+'</div>';
+  html += '<div class="profile-stats">';
   html += '<div class="stat"><div class="val">'+(success===null?"—":success+"%")+'</div><div class="lab">Score de réussite</div></div>';
-  html += '<div class="stat"><div class="val">'+fmtDelta(progA)+'</div><div class="lab">Progression vs période préc.</div></div>';
-  html += '<div class="stat"><div class="val">'+fmtDelta(progBs)+'</div><div class="lab">Tendance récente ('+(state.progressionWindow||3)+' séances)</div></div>';
-  html += '<div class="stat"><div class="val">'+(aider?"Oui":"Non")+'</div><div class="lab">À aider</div></div>';
-  html += '<div class="stat"><div class="val">'+(pri?"Oui":"Non")+'</div><div class="lab">À observer en priorité</div></div>';
   html += '</div>';
   html += '<div class="radar-wrap">'+radarSVG(scoresCurrent, 260, scoresYear, objectives)+'</div>';
-  html += '<div style="text-align:center;font-size:11.5px;color:var(--ink-soft);margin-top:-14px;margin-bottom:16px;">Trait plein : '+(state.periodMode==="trimestre"?"trimestre":"semestre")+' en cours · Pointillé : année complète</div>';
-
-  html += '<div class="evo-wrap"><div class="evo-title">Tendance de la période (droite de régression)</div>';
-  html += trendSparkSVG(progBt);
-  if(progBt){ html += '<div style="font-size:12px;color:var(--ink-soft);margin-top:6px;">Pente : '+(progBt.slope>=0?"+":"")+progBt.slope.toFixed(1)+' points par séance.</div>'; }
-  if(conf < MIN_CONFIDENCE_FOR_TREND){ html += '<div style="font-size:12px;color:var(--neg);margin-top:6px;">Indice de confiance trop bas ('+conf+'%) pour interpréter ces tendances avec certitude.</div>'; }
+  html += '<div style="text-align:center;font-size:11.5px;color:var(--ink-soft);margin-top:-14px;">Trait plein : '+(state.periodMode==="trimestre"?"trimestre":"semestre")+' en cours · Pointillé : année complète '+info("radar","Radar","Ce radar ne suit pas le menu déroulant ci-dessus : le trait plein correspond toujours au "+(state.periodMode==="trimestre"?"trimestre":"semestre")+" réellement en cours aujourd'hui, le pointillé à l'année complète, pour pouvoir comparer les deux en permanence.")+'</div>';
   html += '</div>';
 
-  html += '<div class="evo-wrap"><div class="evo-title">Évolution mensuelle (période sélectionnée)</div>';
+  // ---- 3. Tendances (toujours période réelle en cours, indépendant du menu) ----
+  html += '<div class="evo-wrap"><div class="evo-title">Tendances — '+(state.periodMode==="trimestre"?"trimestre":"semestre")+' réellement en cours '+info("progression","Progression","Deux mesures indépendantes du menu déroulant ci-dessus, toujours calculées sur le "+(state.periodMode==="trimestre"?"trimestre":"semestre")+" réel d'aujourd'hui :<br><br>• <b>Progression vs période précédente</b> : score de réussite de la période en cours moins celui de la période précédente.<br>• <b>Tendance récente</b> : moyenne des "+(state.progressionWindow||3)+" dernières séances moins moyenne des séances précédentes de la période.<br><br>Les deux restent vides (—) tant que l'indice de confiance des périodes comparées est inférieur à "+MIN_CONFIDENCE_FOR_TREND+"%.")+'</div>';
+  html += '<div class="profile-stats">';
+  html += '<div class="stat"><div class="val">'+fmtDelta(progA)+'</div><div class="lab">Progression vs période préc.</div></div>';
+  html += '<div class="stat"><div class="val">'+fmtDelta(progBs)+'</div><div class="lab">Tendance récente ('+(state.progressionWindow||3)+' séances)</div></div>';
+  html += '</div>';
+  html += trendSparkSVG(progBt);
+  if(progBt){ html += '<div style="font-size:12px;color:var(--ink-soft);margin-top:6px;">Pente : '+(progBt.slope>=0?"+":"")+progBt.slope.toFixed(1)+' points par séance.</div>'; }
+  if(confCur.pct < MIN_CONFIDENCE_FOR_TREND){ html += '<div style="font-size:12px;color:var(--neg);margin-top:6px;">Indice de confiance du '+(state.periodMode==="trimestre"?"trimestre":"semestre")+' en cours trop bas ('+confCur.pct+'%) pour interpréter ces tendances avec certitude.</div>'; }
+  html += '</div>';
+
+  // ---- 4. Suivi pédagogique (conséquences) ----
+  html += '<div class="evo-wrap"><div class="evo-title">Suivi pédagogique</div>';
+  html += '<div class="profile-stats">';
+  html += '<div class="stat"><div class="val">'+(observer?"Oui":"Non")+'</div><div class="lab">À observer '+info("observer","À observer","Signalé \"à observer\" quand l'indice de confiance du "+(state.periodMode==="trimestre"?"trimestre":"semestre")+" en cours est inférieur à "+MIN_CONFIDENCE_FOR_TREND+"% : ce n'est pas un problème de difficulté, juste un manque de données pour se prononcer. Sur l'écran Classe, ces élèves ont une carte bleu clair.")+'</div></div>';
+  html += '<div class="stat"><div class="val">'+(aider?"Oui":"Non")+'</div><div class="lab">À aider '+info("aider","À aider","Signalé \"à aider\" quand trois conditions sont réunies : indice de confiance suffisant, score de réussite inférieur à "+SUCCESS_THRESHOLD+"%, et progression nulle ou négative. Un élève avec un score bas mais qui progresse n'est pas signalé. Sur l'écran Classe, ces élèves ont une carte ambre.")+'</div></div>';
+  html += '</div>';
+  if(aider){ html += '<div style="font-size:12.5px;color:var(--neg);margin-top:4px;">Carte ambre sur l\'écran Classe : score bas et pas de progression détectée.</div>'; }
+  else if(observer){ html += '<div style="font-size:12.5px;color:var(--accent);margin-top:4px;">Carte bleue sur l\'écran Classe : pas encore assez de données fiables ce '+(state.periodMode==="trimestre"?"trimestre":"semestre")+'.</div>'; }
+  html += '</div>';
+
+  // ---- 5. Évolution mensuelle ----
+  html += '<div class="evo-wrap"><div class="evo-title">Évolution mensuelle (période sélectionnée) '+info("evolution","Évolution mensuelle","Pour chaque mois, la barre montre la répartition des faits enregistrés selon leur niveau : vert = faits à 75 ou 100%, orange = faits à 50%, rouge = faits à 25%. Le nombre exact de faits de chaque niveau est indiqué à droite.")+'</div>';
+  html += '<div class="legend" style="margin-bottom:10px;"><span class="legend-chip"><span class="legend-dot" style="background:var(--pos);"></span>75-100%</span><span class="legend-chip"><span class="legend-dot" style="background:var(--neutre);"></span>50%</span><span class="legend-chip"><span class="legend-dot" style="background:var(--neg);"></span>25%</span></div>';
   if(evo.length===0){ html += '<div class="hint" style="color:var(--ink-soft);font-size:13px;">Pas encore d\'observation sur cette période.</div>'; }
   evo.forEach(function(m){
     var total = m.counts.pos+m.counts.neu+m.counts.neg || 1;
@@ -1385,7 +1400,7 @@ function renderProfile(){
       '<span style="width:'+(100*m.counts.pos/total)+'%;background:var(--pos)"></span>'+
       '<span style="width:'+(100*m.counts.neu/total)+'%;background:var(--neutre)"></span>'+
       '<span style="width:'+(100*m.counts.neg/total)+'%;background:var(--neg)"></span>'+
-      '</div></div>';
+      '</div><div style="font-size:11px;color:var(--ink-soft);flex-shrink:0;width:52px;text-align:right;">'+m.counts.pos+'·'+m.counts.neu+'·'+m.counts.neg+'</div></div>';
   });
   html += '</div>';
 
@@ -1403,6 +1418,23 @@ function renderProfile(){
   if(reRender) reRender.addEventListener("change", function(){ renderProfile(); });
 }
 
+/* ---------------- Info-bulles (drawer + profil), délégation d'évènement ---------------- */
+document.addEventListener("click", function(e){
+  var btn = e.target.closest("[data-info]");
+  if(!btn) return;
+  var key = btn.getAttribute("data-info");
+  var title = btn.getAttribute("data-info-title");
+  if(!title){
+    var row = btn.closest(".section-title-row");
+    title = row && row.querySelector("h3") ? row.querySelector("h3").textContent : "";
+  }
+  var text = btn.hasAttribute("data-info-dynamic") ? (window["__dyn_"+key]||"") : (INFO_TEXTS[key]||"");
+  document.getElementById("infoModalTitle").textContent = title;
+  document.getElementById("infoModalText").innerHTML = text;
+  document.getElementById("infoModal").classList.add("open");
+});
+
+
 /* ---------------- Top-level events ---------------- */
 function render(){
   renderTabs();
@@ -1418,6 +1450,7 @@ document.getElementById("subnav").addEventListener("click", function(e){
 /* ---------------- Drawer ---------------- */
 var dOverlayNeeded = document.getElementById("drawer");
 var INFO_TEXTS = {
+  reussite: "Moyenne des 5 scores d'axes (radar) sur la période choisie dans le menu déroulant. Chaque fait observé porte un pourcentage (25/50/75/100) ; le score de réussite est la moyenne de tous les faits enregistrés sur la période, tous critères confondus.",
   pronote: "Fichier CSV exporté depuis Pronote (colonnes Eleves, Né(s), Sexe conservées, le reste est ignoré). Le numéro de classe n'étant pas dans ce fichier, indique-le dans le champ ci-dessus avant chaque import — un fichier = une classe. Réimporter une classe met à jour la liste (ajout des nouveaux, passage en inactif de ceux qui sont partis) sans toucher aux autres élèves ni à leur historique.",
   backup: "Ce fichier contient tout : la liste de toutes tes classes et l'intégralité de l'historique des observations, ainsi que l'année scolaire et les dates de semestres configurées. Exporte-le régulièrement pour ne rien perdre. Réimporter une sauvegarde remplace entièrement les données actuelles — utile en cas d'erreur, mais irréversible. (Les données se sauvegardent aussi automatiquement sur cet appareil, dans ce navigateur — mais ouvrir le fichier sur un autre appareil ou après avoir vidé les données du navigateur ne les retrouvera pas : cette sauvegarde complète est ta seule copie transférable.)",
   exports: "Le navigateur enregistre chaque export dans son dossier de téléchargement habituel ; une sélection manuelle du dossier à chaque fois n'est malheureusement pas possible sur téléphone (limitation de Safari/Firefox mobile).",
@@ -1526,14 +1559,6 @@ document.getElementById("anneeModalSave").addEventListener("click", function(){
   render();
 });
 
-document.querySelectorAll("[data-info]").forEach(function(btn){
-  btn.addEventListener("click", function(){
-    var key = btn.getAttribute("data-info");
-    document.getElementById("infoModalTitle").textContent = btn.closest(".section-title-row").querySelector("h3").textContent;
-    document.getElementById("infoModalText").textContent = INFO_TEXTS[key] || "";
-    document.getElementById("infoModal").classList.add("open");
-  });
-});
 document.getElementById("infoModalClose").addEventListener("click", function(){ document.getElementById("infoModal").classList.remove("open"); });
 
 document.getElementById("btnImportStudents").addEventListener("click", function(){
