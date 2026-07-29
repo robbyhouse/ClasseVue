@@ -680,7 +680,7 @@ function sessionCoverage(student){
   var obs = studentObs(student.id, false).filter(function(o){ return o.ms>=sess.startedAt; });
   var cats={}; obs.forEach(function(o){cats[o.categorie]=true;});
   var categoriesFilled = Object.keys(cats).length;
-  return {pct:Math.round(100*categoriesFilled/5), active:true, categoriesFilled:categoriesFilled, sessionId:sess.id};
+  return {pct:Math.round(100*categoriesFilled/CATEGORIES.length), active:true, categoriesFilled:categoriesFilled, sessionId:sess.id};
 }
 function confidenceDetail(student, bounds){
   // Proportion des séances de cette fenêtre (hors absences) où au moins un fait a été enregistré pour cet élève.
@@ -947,7 +947,7 @@ function coverage(student){
   obs.forEach(function(o){ obsDates[o.dateISO]=true; cats[o.categorie]=true; });
   var sessionsObserved = Object.keys(obsDates).length;
   var categoriesFilled = Object.keys(cats).length;
-  var pct = Math.round(100*(categoriesFilled/5));
+  var pct = Math.round(100*(categoriesFilled/CATEGORIES.length));
   return {pct:pct, sessionsObserved:sessionsObserved, totalSessions:Math.max(1,allSessions.length), categoriesFilled:categoriesFilled, lastDate: obs.length? obs.map(function(o){return o.dateISO;}).sort().slice(-1)[0] : null};
 }
 function dimensionScoresForBounds(studentId_, bounds){
