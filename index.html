@@ -655,13 +655,15 @@ function sessionCoverage(student){
 function confidenceDetail(student, bounds){
   // Proportion des séances de cette fenêtre (hors absences) où au moins un fait a été enregistré pour cet élève.
   var classSessions = state.sessionLog.filter(function(s){ return s.classe===student.classe && s.startedAt>=bounds[0] && s.startedAt<=bounds[1]; });
+  var total = classSessions.length;
   var applicable = classSessions.filter(function(s){ return !isAbsent(student.id, s.id); });
-  if(applicable.length===0) return {pct:0, withFacts:0, applicable:0};
+  var absentCount = total - applicable.length;
+  if(applicable.length===0) return {pct:0, withFacts:0, applicable:0, total:total, absent:absentCount};
   var withFacts = applicable.filter(function(s){
     var endBound = s.endedAt || Date.now();
     return state.observations.some(function(o){ return o.studentId===student.id && o.ms>=s.startedAt && o.ms<=endBound; });
   });
-  return {pct: Math.round(100*withFacts.length/applicable.length), withFacts: withFacts.length, applicable: applicable.length};
+  return {pct: Math.round(100*withFacts.length/applicable.length), withFacts: withFacts.length, applicable: applicable.length, total:total, absent:absentCount};
 }
 function confidenceIndexForBounds(student, bounds){ return confidenceDetail(student, bounds).pct; }
 function confidenceIndex(student){ return confidenceIndexForBounds(student, currentSemesterBounds()); }
@@ -1141,13 +1143,34 @@ function renderSuiviView(main){
   var students = activeStudents(state.currentClasse);
   var html = '<div class="period-row">'+periodSelectorHtml()+'</div>';
   if(students.length===0){ main.innerHTML = html+'<div class="empty"><h3>Rien à afficher</h3></div>'; bindPeriodSelector(); return; }
+  var selKey = state.period;
+  var hasPrevPeriod = (selKey==="p2" || selKey==="p3");
+  var prevBounds = hasPrevPeriod ? periodBoundsFor("p"+(parseInt(selKey.slice(1),10)-1)) : null;
+  if(hasPrevPeriod){
+    html += '<p style="font-size:11.5px;color:var(--ink-soft);margin:-6px 0 10px 0;">Confiance et Réussite suivent la période choisie ci-dessus. La flèche compare à la période précédente ('+periodLabel(parseInt(selKey.slice(1),10)-1)+'). À observer / à aider restent toujours calculés sur le '+(state.periodMode==="trimestre"?"trimestre":"semestre")+' réellement en cours.</p>';
+  } else {
+    html += '<p style="font-size:11.5px;color:var(--ink-soft);margin:-6px 0 10px 0;">Confiance et Réussite suivent la période choisie ci-dessus. À observer / à aider restent toujours calculés sur le '+(state.periodMode==="trimestre"?"trimestre":"semestre")+' réellement en cours.</p>';
+  }
   var rows = students.map(function(s){
     var cov = coverage(s);
-    var conf = confidenceDetail(s, currentSemesterBounds());
+    var conf = confidenceDetail(s, periodBounds());
     var observer = needsObservation(s);
     var success = successScoreForBounds(s.id, periodBounds());
     var aider = needsHelp(s);
-    return {s:s, cov:cov, conf:conf, observer:observer, success:success, aider:aider};
+    var arrow = "";
+    if(hasPrevPeriod && success!==null){
+      var confPrev = confidenceDetail(s, prevBounds);
+      if(conf.pct>=MIN_CONFIDENCE_FOR_TREND && confPrev.pct>=MIN_CONFIDENCE_FOR_TREND){
+        var succPrev = successScoreForBounds(s.id, prevBounds);
+        if(succPrev!==null){
+          var d = success-succPrev;
+          arrow = d>2 ? ' <span style="color:var(--pos)" title="Progression vs période précédente">▲</span>'
+                : d<-2 ? ' <span style="color:var(--neg)" title="Baisse vs période précédente">▼</span>'
+                : ' <span style="color:var(--ink-soft)" title="Stable vs période précédente">→</span>';
+        }
+      }
+    }
+    return {s:s, cov:cov, conf:conf, observer:observer, success:success, aider:aider, arrow:arrow};
   });
   var key = state.suiviSort.key, dir = state.suiviSort.dir==="asc"?1:-1;
   rows.sort(function(a,b){
@@ -1157,7 +1180,6 @@ function renderSuiviView(main){
     else if(key==="observer"){ va=a.observer?1:0; vb=b.observer?1:0; }
     else if(key==="reussite"){ va=a.success===null?-1:a.success; vb=b.success===null?-1:b.success; }
     else if(key==="aider"){ va=a.aider?1:0; vb=b.aider?1:0; }
-    else if(key==="categories"){ va=a.cov.categoriesFilled; vb=b.cov.categoriesFilled; }
     else if(key==="derniere"){ va=a.cov.lastDate||""; vb=b.cov.lastDate||""; }
     else { va=0; vb=0; }
     if(va<vb) return -1*dir; if(va>vb) return 1*dir; return 0;
@@ -1167,16 +1189,15 @@ function renderSuiviView(main){
     return '<th class="sortable" data-sort="'+k+'">'+labelTxt+' <span class="arrow">'+arrow+'</span></th>';
   }
   html += '<div class="table-wrap"><table><thead><tr>'+
-    th("Élève","nom")+th("Confiance","confiance")+th("Réussite (période sél.)","reussite")+th("À observer","observer")+th("À aider","aider")+th("Catégories","categories")+th("Dernière obs.","derniere")+'<th></th>'+
+    th("Élève","nom")+th("Confiance","confiance")+th("Réussite (période sél.)","reussite")+th("À observer","observer")+th("À aider","aider")+th("Dernière obs.","derniere")+'<th></th>'+
     '</tr></thead><tbody>';
   rows.forEach(function(r){
     html += '<tr>'+
       '<td>'+escapeHtml(r.s.prenom)+' '+escapeHtml(r.s.nom.toUpperCase())+'</td>'+
       '<td>'+r.conf.pct+'% ('+r.conf.withFacts+'/'+r.conf.applicable+')</td>'+
-      '<td>'+(r.success===null?"—":r.success+"%")+'</td>'+
+      '<td>'+(r.success===null?"—":r.success+"%"+r.arrow)+'</td>'+
       '<td>'+(r.observer?'<span class="badge pri" style="background:var(--priority-bg);color:var(--accent);">à observer</span>':'—')+'</td>'+
       '<td>'+(r.aider?'<span class="badge pri" style="background:var(--watch-bg);color:#8a5a12;">à aider</span>':'—')+'</td>'+
-      '<td>'+r.cov.categoriesFilled+' / 5</td>'+
       '<td>'+(r.cov.lastDate||"—")+'</td>'+
       '<td><button class="link-btn" data-profile2="'+r.s.id+'">Profil →</button></td>'+
       '</tr>';
@@ -1355,9 +1376,10 @@ function renderProfile(){
   var html = '<div class="period-row">'+periodSelectorHtml()+'</div>';
 
   // ---- 1. Fiabilité des données ----
-  html += '<div class="evo-wrap"><div class="evo-title">Fiabilité des données '+info("confiance","Indice de confiance", "L'indice de confiance mesure la part des séances (de la période sélectionnée) où au moins un fait a été enregistré pour cet élève, absences exclues.<br><br>Calcul pour "+escapeHtml(s.prenom)+" : Ic = (séances avec au moins un fait ÷ séances où l'élève était présent) × 100 = ("+confSel.withFacts+" ÷ "+confSel.applicable+") × 100 = "+confSel.pct+"%.<br><br>En dessous de "+MIN_CONFIDENCE_FOR_TREND+"%, les tendances et le critère \"à aider\" ne sont pas calculés : il n'y a pas assez de données pour trancher.")+'</div>';
+  html += '<div class="evo-wrap"><div class="evo-title">Fiabilité des données '+info("confiance","Indice de confiance", "L'indice de confiance mesure la part des séances (de la période sélectionnée) où au moins un fait a été enregistré pour cet élève, absences exclues du calcul.<br><br>Calcul pour "+escapeHtml(s.prenom)+" : Ic = (séances avec au moins un fait ÷ séances où l'élève était présent) × 100 = ("+confSel.withFacts+" ÷ "+confSel.applicable+") × 100 = "+confSel.pct+"%.<br><br>Sur les "+confSel.total+" séances de la période, "+confSel.absent+" ont été déclarées comme absence — elles ne comptent ni pour ni contre l'indice, mais permettent de savoir si un écart vient d'un manque d'observation ou simplement d'absences.<br><br>En dessous de "+MIN_CONFIDENCE_FOR_TREND+"%, les tendances et le critère \"à aider\" ne sont pas calculés : il n'y a pas assez de données pour trancher.")+'</div>';
   html += '<div class="profile-stats">';
   html += '<div class="stat"><div class="val">'+confSel.pct+'%</div><div class="lab">Indice de confiance ('+confSel.withFacts+'/'+confSel.applicable+' séances)</div></div>';
+  html += '<div class="stat"><div class="val">'+confSel.absent+'/'+confSel.total+'</div><div class="lab">Absences déclarées</div></div>';
   html += '</div></div>';
 
   // ---- 2. Statistiques de la période sélectionnée ----
