@@ -260,6 +260,15 @@
     </div>
 
     <div class="drawer-section">
+      <div class="section-title-row"><h3>Objectifs (import depuis Excel)</h3><button class="info-btn" data-info="objectifs">i</button></div>
+      <label class="mini-label">Classe concernée</label>
+      <select id="objClasseSelect" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;"></select>
+      <button class="btn" id="btnDownloadObjTemplate">Télécharger le modèle de cette classe (CSV)</button>
+      <button class="btn primary" id="btnImportObjectifs">Importer les objectifs remplis (CSV)</button>
+      <div class="status" id="statusObjectifs"></div>
+    </div>
+
+    <div class="drawer-section">
       <div class="section-title-row"><h3>Listes des classes (export Pronote)</h3><button class="info-btn" data-info="pronote">i</button></div>
       <input type="text" id="classeInputName" placeholder="Nom de la classe (ex: 3e1)" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:11px 12px;font-size:14px;margin-bottom:8px;">
       <button class="btn primary" id="btnImportStudents">Importer ce fichier pour cette classe (CSV Pronote)</button>
@@ -331,6 +340,7 @@
 
 <input type="file" id="fileStudents" accept=".csv,text/csv">
 <input type="file" id="fileFull" accept=".csv,text/csv">
+<input type="file" id="fileObjectifs" accept=".csv,text/csv">
 
 <div id="printView"></div>
 
@@ -1410,7 +1420,8 @@ var dOverlayNeeded = document.getElementById("drawer");
 var INFO_TEXTS = {
   pronote: "Fichier CSV exporté depuis Pronote (colonnes Eleves, Né(s), Sexe conservées, le reste est ignoré). Le numéro de classe n'étant pas dans ce fichier, indique-le dans le champ ci-dessus avant chaque import — un fichier = une classe. Réimporter une classe met à jour la liste (ajout des nouveaux, passage en inactif de ceux qui sont partis) sans toucher aux autres élèves ni à leur historique.",
   backup: "Ce fichier contient tout : la liste de toutes tes classes et l'intégralité de l'historique des observations, ainsi que l'année scolaire et les dates de semestres configurées. Exporte-le régulièrement pour ne rien perdre. Réimporter une sauvegarde remplace entièrement les données actuelles — utile en cas d'erreur, mais irréversible. (Les données se sauvegardent aussi automatiquement sur cet appareil, dans ce navigateur — mais ouvrir le fichier sur un autre appareil ou après avoir vidé les données du navigateur ne les retrouvera pas : cette sauvegarde complète est ta seule copie transférable.)",
-  exports: "Le navigateur enregistre chaque export dans son dossier de téléchargement habituel ; une sélection manuelle du dossier à chaque fois n'est malheureusement pas possible sur téléphone (limitation de Safari/Firefox mobile)."
+  exports: "Le navigateur enregistre chaque export dans son dossier de téléchargement habituel ; une sélection manuelle du dossier à chaque fois n'est malheureusement pas possible sur téléphone (limitation de Safari/Firefox mobile).",
+  objectifs: "Le modèle téléchargé contient déjà la liste des élèves de la classe choisie (et les objectifs déjà fixés, s'il y en a). Remplis les colonnes avec 25, 50, 75 ou 100 dans Excel, laisse vide ce que tu ne veux pas fixer, puis réimporte le fichier. Seules les cases remplies sont mises à jour ; le reste n'est pas modifié. L'onglet \"Objectifs\" de l'application permet ensuite les ajustements ponctuels en cours d'année."
 };
 function renderBackupBanner(){
   var el = document.getElementById("lastBackupBanner");
@@ -1450,6 +1461,8 @@ function openDrawer(){
   var expSel = document.getElementById("exportClasseSelect");
   var classes = classesList();
   expSel.innerHTML = classes.map(function(c){ return '<option value="'+encodeURIComponent(c)+'"'+(c===state.currentClasse?" selected":"")+'>'+escapeHtml(c)+'</option>'; }).join("") || '<option value="">Aucune classe</option>';
+  var objSel = document.getElementById("objClasseSelect");
+  objSel.innerHTML = expSel.innerHTML;
   document.getElementById("drawer").classList.add("open"); document.getElementById("overlay").classList.add("open");
 }
 function closeDrawerFn(){ document.getElementById("drawer").classList.remove("open"); document.getElementById("overlay").classList.remove("open"); }
@@ -1539,6 +1552,57 @@ document.getElementById("fileStudents").addEventListener("change", function(e){
       setStatus("statusStudents", res.added+" ajouté(s), "+res.reactivated+" réactivé(s), "+res.deactivated+" passé(s) en inactif pour "+classe+".", "ok");
       render();
     }catch(err){ setStatus("statusStudents","Erreur de lecture du fichier.","err"); }
+  };
+  reader.readAsText(file,"UTF-8"); e.target.value="";
+});
+
+document.getElementById("btnDownloadObjTemplate").addEventListener("click", function(){
+  var classe = decodeURIComponent(document.getElementById("objClasseSelect").value || "");
+  if(!classe){ setStatus("statusObjectifs","Aucune classe disponible.","err"); return; }
+  var students = activeStudents(classe);
+  var header = ["classe","nom","prenom"].concat(CATEGORIES.map(function(c){return c.label+" (25/50/75/100)";}));
+  var lines = [header.map(escCsv).join(",")];
+  students.forEach(function(s){
+    var obj = state.objectives[s.id] || {};
+    var row = [s.classe, s.nom, s.prenom].concat(CATEGORIES.map(function(c){ return obj[c.id]||""; }));
+    lines.push(row.map(escCsv).join(","));
+  });
+  download("ClasseVueObjectifsModele"+sanitizeFilePart(classe)+"_"+fileStamp()+".csv", lines.join("\n"));
+  setStatus("statusObjectifs","Modèle téléchargé pour "+classe+".","ok");
+});
+
+document.getElementById("btnImportObjectifs").addEventListener("click", function(){ document.getElementById("fileObjectifs").click(); });
+document.getElementById("fileObjectifs").addEventListener("change", function(e){
+  var file=e.target.files[0]; if(!file) return;
+  var reader=new FileReader();
+  reader.onload=function(evt){
+    try{
+      var rows = parseCsv(evt.target.result);
+      if(rows.length===0){ setStatus("statusObjectifs","Fichier vide.","err"); e.target.value=""; return; }
+      var headerCell = (rows[0][0]||"").trim().toLowerCase();
+      var start = (headerCell==="classe") ? 1 : 0;
+      var updatedStudents=0, updatedValues=0, notFound=0;
+      for(var i=start;i<rows.length;i++){
+        var r = rows[i]; if(!r[0] && !r[1] && !r[2]) continue;
+        var classe=r[0]||"", nom=r[1]||"", prenom=r[2]||"";
+        var stud = state.students.find(function(s){ return slugify(s.classe)===slugify(classe) && slugify(s.nom)===slugify(nom) && slugify(s.prenom)===slugify(prenom); });
+        if(!stud){ notFound++; continue; }
+        var touched = false;
+        CATEGORIES.forEach(function(c, idx){
+          var raw = (r[3+idx]||"").trim();
+          if(raw===""){ return; }
+          var val = parseInt(raw,10);
+          if([25,50,75,100].indexOf(val)===-1){ return; }
+          if(!state.objectives[stud.id]) state.objectives[stud.id] = {};
+          state.objectives[stud.id][c.id] = val;
+          updatedValues++; touched = true;
+        });
+        if(touched) updatedStudents++;
+      }
+      persist();
+      setStatus("statusObjectifs", updatedValues+" objectif(s) mis à jour pour "+updatedStudents+" élève(s)."+(notFound>0?" ("+notFound+" ligne(s) sans élève correspondant.)":""), "ok");
+      render();
+    }catch(err){ setStatus("statusObjectifs","Erreur de lecture du fichier.","err"); }
   };
   reader.readAsText(file,"UTF-8"); e.target.value="";
 });
