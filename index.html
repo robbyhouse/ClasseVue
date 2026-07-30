@@ -318,6 +318,15 @@
       </select>
     </div>
 
+    <div class="drawer-section">
+      <div class="section-title-row"><h3>Affichage des critères de réussite</h3></div>
+      <p class="hint">Concerne uniquement l'onglet Réussite et ses exports (PDF/XLS) — le reste de l'outil garde toujours les pourcentages.</p>
+      <select id="reussiteDisplayModeSelect" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:14px;">
+        <option value="pct">Pourcentage (ex : 82%)</option>
+        <option value="niveau">Niveau 1 à 4 (comme la grille papier)</option>
+      </select>
+    </div>
+
     </div>
 
     <div class="drawer-group-header">
@@ -553,6 +562,7 @@ var state = {
   exportPeriodKey: "annee",
   exportCustomStart: "", exportCustomEnd: "",
   metavuePeriodKey: "annee", // toujours une seule période, jamais "multi"
+  reussiteDisplayMode: "pct", // "pct" | "niveau" — affichage des 5 critères de réussite uniquement
   lastFullBackupMs: null,
   suiviSort: {key:"nom", dir:"asc"},
   sheet: null,         // {studentId, mode:'categories'|'facts', categoryId}
@@ -601,7 +611,7 @@ function persist(){
       kvSet("students", JSON.stringify(state.students)),
       kvSet("observations", JSON.stringify(state.observations)),
       kvSet("objectives", JSON.stringify(state.objectives)),
-      kvSet("meta", JSON.stringify({currentClasse:state.currentClasse, anneeScolaire:state.anneeScolaire, periodMode:state.periodMode, periodDates:state.periodDates, sessionLog:state.sessionLog, absences:state.absences, lastFullBackupMs:state.lastFullBackupMs, progressionWindow:state.progressionWindow, radarAxes:state.radarAxes, tabsConfig:state.tabsConfig, exportPeriodMode:state.exportPeriodMode, exportPeriodKey:state.exportPeriodKey, exportCustomStart:state.exportCustomStart, exportCustomEnd:state.exportCustomEnd, metavuePeriodKey:state.metavuePeriodKey}))
+      kvSet("meta", JSON.stringify({currentClasse:state.currentClasse, anneeScolaire:state.anneeScolaire, periodMode:state.periodMode, periodDates:state.periodDates, sessionLog:state.sessionLog, absences:state.absences, lastFullBackupMs:state.lastFullBackupMs, progressionWindow:state.progressionWindow, radarAxes:state.radarAxes, tabsConfig:state.tabsConfig, exportPeriodMode:state.exportPeriodMode, exportPeriodKey:state.exportPeriodKey, exportCustomStart:state.exportCustomStart, exportCustomEnd:state.exportCustomEnd, metavuePeriodKey:state.metavuePeriodKey, reussiteDisplayMode:state.reussiteDisplayMode}))
     ]).then(function(){ setAutosaveStatus("Sauvegardé automatiquement sur cet appareil.", "ok"); })
       .catch(function(){ setAutosaveStatus("Sauvegarde automatique indisponible ici — pense à exporter en CSV.", "err"); });
   }, 300);
@@ -627,6 +637,7 @@ function loadPersisted(){
       if(m && m.exportCustomStart) state.exportCustomStart=m.exportCustomStart;
       if(m && m.exportCustomEnd) state.exportCustomEnd=m.exportCustomEnd;
       if(m && m.metavuePeriodKey) state.metavuePeriodKey=m.metavuePeriodKey;
+      if(m && m.reussiteDisplayMode) state.reussiteDisplayMode=m.reussiteDisplayMode;
     }
     if(res[3]) state.objectives = JSON.parse(res[3]);
     if(!state.anneeScolaire) state.anneeScolaire = defaultAnneeScolaire();
@@ -850,6 +861,18 @@ function colorForPct(pct){
   if(pct<=50) return {bg:"#FBE3C9", fg:"#B9631A"};
   if(pct<=75) return {bg:"#F7EFC9", fg:"#8A6D10"};
   return {bg:"#DCEEE1", fg:"var(--pos)"};
+}
+function pctToNiveau(pct){
+  if(pct===null || pct===undefined) return null;
+  if(pct<=25) return 1;
+  if(pct<=50) return 2;
+  if(pct<=75) return 3;
+  return 4;
+}
+function formatReussiteValue(pct, forExport){
+  if(pct===null || pct===undefined) return forExport ? "" : "—";
+  if(state.reussiteDisplayMode==="niveau") return String(pctToNiveau(pct));
+  return forExport ? pct : (pct+"%");
 }
 function currentPeriodIndex(){
   var now = Date.now();
@@ -1455,7 +1478,7 @@ function renderReussiteView(main){
     REUSSITE_CRITERES.forEach(function(cr){
       var v = r.vals[cr.id];
       var c = colorForPct(v);
-      html += '<td><span style="display:inline-block;padding:3px 9px;border-radius:20px;font-weight:700;background:'+c.bg+';color:'+c.fg+';">'+(v===null?"—":v+"%")+'</span></td>';
+      html += '<td><span style="display:inline-block;padding:3px 9px;border-radius:20px;font-weight:700;background:'+c.bg+';color:'+c.fg+';">'+formatReussiteValue(v)+'</span></td>';
     });
     html += '</tr>';
   });
@@ -1503,7 +1526,7 @@ function printReussitePdf(periods, classe){
         } else {
           var v = compositeScoreForBounds(s.id, cr.cats, p.bounds);
           var col2 = colorForPct(v);
-          html += '<td style="text-align:center;padding:3px 2px;border-bottom:1px solid #eee;background:'+col2.bg+';color:'+col2.fg+';font-weight:700;">'+(v===null?"—":v+"%")+'</td>';
+          html += '<td style="text-align:center;padding:3px 2px;border-bottom:1px solid #eee;background:'+col2.bg+';color:'+col2.fg+';font-weight:700;">'+formatReussiteValue(v)+'</td>';
         }
       });
     });
@@ -1557,7 +1580,7 @@ function exportReussiteXls(periods, classe){
           line += "<td>"+cd.pct+"% ("+cd.withFacts+"/"+cd.applicable+")</td>";
         } else {
           var v = compositeScoreForBounds(s.id, cr.cats, p.bounds);
-          line += "<td>"+(v===null?"":v)+"</td>";
+          line += "<td>"+formatReussiteValue(v, true)+"</td>";
         }
       });
     });
@@ -1896,6 +1919,7 @@ function openDrawer(){
   renderAnneeSummary();
   renderBackupBanner();
   document.getElementById("progressionWindowSelect").value = String(state.progressionWindow||3);
+  document.getElementById("reussiteDisplayModeSelect").value = state.reussiteDisplayMode;
   renderRadarAxesChecks();
   renderTabsConfigChecks();
   var expSel = document.getElementById("exportClasseSelect");
@@ -1917,6 +1941,10 @@ function closeDrawerFn(){ document.getElementById("drawer").classList.remove("op
 document.getElementById("btnDrawer").addEventListener("click", openDrawer);
 document.getElementById("progressionWindowSelect").addEventListener("change", function(){
   state.progressionWindow = parseInt(this.value,10)||3;
+  persist();
+});
+document.getElementById("reussiteDisplayModeSelect").addEventListener("change", function(){
+  state.reussiteDisplayMode = this.value;
   persist();
 });
 function updateExportPeriodUIVisibility(){
