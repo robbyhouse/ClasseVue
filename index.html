@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>ClasseVue — Observation des apprentissages</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<meta name="theme-color" content="#2E4F49">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ClasseVue">
 <style>
   :root{
     --paper:#F5F6F1;
@@ -255,6 +262,12 @@
   <div class="drawer-body">
 
     <div class="lastbackup-banner" id="lastBackupBanner"></div>
+    <div class="lastbackup-banner" id="installBanner" style="display:none;background:var(--priority-bg);color:var(--accent);">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+        <span id="installBannerText">Installer ClasseVue sur l'écran d'accueil</span>
+        <button class="btn primary" id="btnInstallApp" style="margin:0;width:auto;padding:8px 14px;white-space:nowrap;">Installer</button>
+      </div>
+    </div>
 
     <button class="drawer-group-title" data-group="demarrage">Démarrage de l'année <span class="chevron">▸</span></button>
     <div class="drawer-group-content" id="group-demarrage">
@@ -2046,6 +2059,71 @@ document.getElementById("btnExportXls").addEventListener("click", function(){
   var html = "<html><head><meta charset='UTF-8'></head><body><table border='1'>"+rows+"</table></body></html>";
   download("ClasseVueComp"+sanitizeFilePart(exportClasse)+"_"+fileStamp()+".xls", html, "application/vnd.ms-excel");
 });
+
+/* ---------------- Installation sur l'écran d'accueil ---------------- */
+var deferredInstallPrompt = null;
+function isStandaloneDisplay(){
+  return (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || window.navigator.standalone === true;
+}
+function isIOSDevice(){
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+}
+function iosBrowserName(){
+  var ua = navigator.userAgent;
+  if(ua.indexOf("CriOS")>-1) return "Chrome";
+  if(ua.indexOf("FxiOS")>-1) return "Firefox";
+  return "Safari";
+}
+function renderInstallBanner(){
+  var el = document.getElementById("installBanner");
+  var btn = document.getElementById("btnInstallApp");
+  var txt = document.getElementById("installBannerText");
+  if(!el) return;
+  if(isStandaloneDisplay()){ el.style.display="none"; return; }
+  if(deferredInstallPrompt){
+    el.style.display="block"; txt.textContent="Installer ClasseVue sur l'écran d'accueil"; btn.textContent="Installer";
+  } else if(isIOSDevice()){
+    el.style.display="block"; txt.textContent="Ajouter ClasseVue à l'écran d'accueil"; btn.textContent="Comment faire";
+  } else {
+    el.style.display="none";
+  }
+}
+window.addEventListener("beforeinstallprompt", function(e){
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  renderInstallBanner();
+});
+window.addEventListener("appinstalled", function(){
+  deferredInstallPrompt = null;
+  renderInstallBanner();
+});
+document.getElementById("btnInstallApp").addEventListener("click", function(){
+  if(deferredInstallPrompt){
+    deferredInstallPrompt.prompt();
+    deferredInstallPrompt.userChoice.then(function(){ deferredInstallPrompt=null; renderInstallBanner(); });
+    return;
+  }
+  if(isIOSDevice()){
+    var browser = iosBrowserName();
+    var steps;
+    if(browser==="Safari"){
+      steps = "1. Appuie sur l'icône <b>Partager</b> (le carré avec la flèche vers le haut), en bas de l'écran.<br>2. Fais défiler et appuie sur <b>« Sur l'écran d'accueil »</b>.<br>3. Valide.";
+    } else {
+      steps = "1. Appuie sur l'icône de partage <b>dans la barre d'adresse</b>, en haut de l'écran (pas en bas).<br>2. Appuie sur <b>« Sur l'écran d'accueil »</b>.<br>3. Valide avec « Ajouter ».";
+    }
+    document.getElementById("infoModalTitle").textContent = "Installer sur iPhone / iPad ("+browser+")";
+    document.getElementById("infoModalText").innerHTML = steps;
+    document.getElementById("infoModal").classList.add("open");
+  } else {
+    document.getElementById("infoModalTitle").textContent = "Installer ClasseVue";
+    document.getElementById("infoModalText").innerHTML = "Ouvre le menu de ton navigateur (généralement les trois points ⋮) et cherche « Ajouter à l'écran d'accueil » ou « Installer l'application ».";
+    document.getElementById("infoModal").classList.add("open");
+  }
+});
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("sw.js").catch(function(){});
+}
+renderInstallBanner();
 
 loadPersisted().then(function(){ render(); }).catch(function(){ render(); });
 })();
