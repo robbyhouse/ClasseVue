@@ -1483,25 +1483,28 @@ function renderReussiteView(main){
 }
 function printReussitePdf(periods){
   var students = activeStudents(state.currentClasse);
+  var isMulti = periods.length>1;
+  var orderedPeriods = isMulti ? [resolvePeriodByKey("annee")].concat(periods.filter(function(p){return p.key!=="annee";})) : periods;
   var stamp = exportStampLine(periods);
+  var fontSize = isMulti ? (orderedPeriods.length>=3 ? "7.5px" : "8.5px") : "11px";
   var html = '<div style="font-family:-apple-system,Arial,sans-serif;">';
   html += '<h1 style="font-size:18px;margin:0 0 2px 0;">Critères favorisant la réussite — '+escapeHtml(state.currentClasse)+'</h1>';
   html += '<div style="font-size:11px;color:#777;margin-bottom:10px;">'+escapeHtml(stamp)+'</div>';
-  html += '<table style="border-collapse:collapse;width:100%;font-size:'+(periods.length>1?"9px":"11px")+';">';
-  html += '<thead><tr><th style="text-align:left;padding:4px 6px;border-bottom:2px solid #333;">Élève</th>';
-  periods.forEach(function(p){
-    REUSSITE_CRITERES.forEach(function(cr){
-      html += '<th style="text-align:center;padding:3px 3px;border-bottom:2px solid #333;">'+escapeHtml(cr.label)+(periods.length>1?'<br><span style="font-weight:400;color:#777;">('+escapeHtml(p.label)+')</span>':'')+'</th>';
+  html += '<table id="reussitePdfTable" style="border-collapse:collapse;font-size:'+fontSize+';">';
+  html += '<thead><tr><th style="text-align:left;padding:3px 5px;border-bottom:2px solid #333;white-space:nowrap;">Élève</th>';
+  REUSSITE_CRITERES.forEach(function(cr){
+    orderedPeriods.forEach(function(p){
+      html += '<th style="text-align:center;padding:3px 2px;border-bottom:2px solid #333;">'+escapeHtml(cr.label)+(isMulti?'<br><span style="font-weight:400;color:#777;">('+escapeHtml(p.label)+')</span>':'')+'</th>';
     });
   });
   html += '</tr></thead><tbody>';
   students.forEach(function(s){
-    html += '<tr><td style="padding:3px 6px;border-bottom:1px solid #eee;font-weight:600;white-space:nowrap;">'+escapeHtml(s.prenom)+' '+escapeHtml(s.nom.toUpperCase())+'</td>';
-    periods.forEach(function(p){
-      REUSSITE_CRITERES.forEach(function(cr){
+    html += '<tr><td style="padding:3px 5px;border-bottom:1px solid #eee;font-weight:600;white-space:nowrap;">'+escapeHtml(s.prenom)+' '+escapeHtml(s.nom.toUpperCase())+'</td>';
+    REUSSITE_CRITERES.forEach(function(cr){
+      orderedPeriods.forEach(function(p){
         var v = compositeScoreForBounds(s.id, cr.cats, p.bounds);
         var col = colorForPct(v);
-        html += '<td style="text-align:center;padding:3px 3px;border-bottom:1px solid #eee;background:'+col.bg+';color:'+col.fg+';font-weight:700;">'+(v===null?"—":v+"%")+'</td>';
+        html += '<td style="text-align:center;padding:3px 2px;border-bottom:1px solid #eee;background:'+col.bg+';color:'+col.fg+';font-weight:700;">'+(v===null?"—":v+"%")+'</td>';
       });
     });
     html += '</tr>';
@@ -1510,6 +1513,17 @@ function printReussitePdf(periods){
   document.getElementById("printView").innerHTML = html;
   var pageStyle = document.getElementById("dynamicPageStyle");
   if(pageStyle) pageStyle.textContent = "@page{size:A4 landscape;margin:9mm;}";
+  // Sécurité : si le navigateur ignore le paysage (Safari) et reste en portrait,
+  // on réduit automatiquement le tableau pour qu'il tienne quand même sur la page, sans rien couper.
+  var table = document.getElementById("reussitePdfTable");
+  table.style.transform = "none";
+  var natural = table.scrollWidth;
+  var safeWidthPx = 700; // largeur utile approximative d'une page A4 portrait imprimée
+  if(natural > safeWidthPx){
+    var scale = safeWidthPx / natural;
+    table.style.transformOrigin = "top left";
+    table.style.transform = "scale("+scale.toFixed(3)+")";
+  }
   var oldTitle = document.title;
   document.title = "ClasseVueReussite"+sanitizeFilePart(state.currentClasse)+"_"+fileStamp();
   window.print();
