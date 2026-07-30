@@ -345,8 +345,30 @@
     <div class="drawer-section">
       <label class="mini-label">Classe à exporter</label>
       <select id="exportClasseSelect" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;"></select>
+
+      <label class="mini-label">Période</label>
+      <select id="exportPeriodModeSelect" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:13.5px;margin-bottom:6px;">
+        <option value="single">Une période</option>
+        <option value="multi">Toutes les périodes côte à côte (évolution)</option>
+      </select>
+      <select id="exportPeriodKeySelect" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:13.5px;margin-bottom:6px;"></select>
+      <button type="button" id="exportCustomToggle" style="background:none;border:none;color:var(--accent);font-size:12px;font-weight:700;cursor:pointer;padding:2px 0;margin-bottom:8px;">Dates personnalisées ▸</button>
+      <div id="exportCustomDates" style="display:none;margin-bottom:8px;">
+        <div class="mini-date-row">
+          <div><label class="mini-label">Début</label><input type="date" id="exportCustomStartInput" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;"></div>
+          <div><label class="mini-label">Fin</label><input type="date" id="exportCustomEndInput" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;"></div>
+        </div>
+      </div>
+
       <button class="btn" id="btnPrintProfiles">Profils de la classe (impression / PDF)</button>
       <button class="btn" id="btnExportXls">Comparaison classe (XLS)</button>
+    </div>
+
+    <div class="drawer-section">
+      <div class="section-title-row"><h3>Export MetaVue</h3></div>
+      <p class="hint">Nom/prénom en clair, les 7 catégories observées, toujours sur une seule période (pour rester compatible avec l'outil anonymiseur).</p>
+      <select id="metavuePeriodSelect" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:13.5px;margin-bottom:8px;"></select>
+      <button class="btn" id="btnExportMetavue">Exporter (XLS)</button>
     </div>
 
     </div>
@@ -404,6 +426,7 @@
 <input type="file" id="fileFull" accept=".csv,text/csv">
 <input type="file" id="fileObjectifs" accept=".csv,text/csv">
 
+<style id="dynamicPageStyle"></style>
 <div id="printView"></div>
 
 <script>
@@ -524,6 +547,10 @@ var state = {
   progressionWindow: 3, // nombre de séances récentes pour la tendance glissante
   radarAxes: {entree:true, difficulte:true, attention:true, ressources:true, finalisation:true, tutorat:false, participation:false},
   tabsConfig: {classe:true, suivi:true, objectifs:false, reussite:false},
+  exportPeriodMode: "single", // "single" | "multi" — pour Profils PDF et Comparaison XLS
+  exportPeriodKey: "annee",
+  exportCustomStart: "", exportCustomEnd: "",
+  metavuePeriodKey: "annee", // toujours une seule période, jamais "multi"
   lastFullBackupMs: null,
   suiviSort: {key:"nom", dir:"asc"},
   sheet: null,         // {studentId, mode:'categories'|'facts', categoryId}
@@ -572,7 +599,7 @@ function persist(){
       kvSet("students", JSON.stringify(state.students)),
       kvSet("observations", JSON.stringify(state.observations)),
       kvSet("objectives", JSON.stringify(state.objectives)),
-      kvSet("meta", JSON.stringify({currentClasse:state.currentClasse, anneeScolaire:state.anneeScolaire, periodMode:state.periodMode, periodDates:state.periodDates, sessionLog:state.sessionLog, absences:state.absences, lastFullBackupMs:state.lastFullBackupMs, progressionWindow:state.progressionWindow, radarAxes:state.radarAxes, tabsConfig:state.tabsConfig}))
+      kvSet("meta", JSON.stringify({currentClasse:state.currentClasse, anneeScolaire:state.anneeScolaire, periodMode:state.periodMode, periodDates:state.periodDates, sessionLog:state.sessionLog, absences:state.absences, lastFullBackupMs:state.lastFullBackupMs, progressionWindow:state.progressionWindow, radarAxes:state.radarAxes, tabsConfig:state.tabsConfig, exportPeriodMode:state.exportPeriodMode, exportPeriodKey:state.exportPeriodKey, exportCustomStart:state.exportCustomStart, exportCustomEnd:state.exportCustomEnd, metavuePeriodKey:state.metavuePeriodKey}))
     ]).then(function(){ setAutosaveStatus("Sauvegardé automatiquement sur cet appareil.", "ok"); })
       .catch(function(){ setAutosaveStatus("Sauvegarde automatique indisponible ici — pense à exporter en CSV.", "err"); });
   }, 300);
@@ -593,6 +620,11 @@ function loadPersisted(){
       if(m && m.progressionWindow) state.progressionWindow=m.progressionWindow;
       if(m && m.radarAxes) state.radarAxes=Object.assign({}, state.radarAxes, m.radarAxes);
       if(m && m.tabsConfig) state.tabsConfig=Object.assign({}, state.tabsConfig, m.tabsConfig, {classe:true});
+      if(m && m.exportPeriodMode) state.exportPeriodMode=m.exportPeriodMode;
+      if(m && m.exportPeriodKey) state.exportPeriodKey=m.exportPeriodKey;
+      if(m && m.exportCustomStart) state.exportCustomStart=m.exportCustomStart;
+      if(m && m.exportCustomEnd) state.exportCustomEnd=m.exportCustomEnd;
+      if(m && m.metavuePeriodKey) state.metavuePeriodKey=m.metavuePeriodKey;
     }
     if(res[3]) state.objectives = JSON.parse(res[3]);
     if(!state.anneeScolaire) state.anneeScolaire = defaultAnneeScolaire();
@@ -699,6 +731,43 @@ function currentSemesterBounds(){
     if(now>=b[0] && now<=b[1]) return b;
   }
   return periodBoundsFor("p"+n);
+}
+
+/* ---------------- Résolution des périodes pour les exports (indépendant du menu déroulant à l'écran) ---------------- */
+function periodKeyLabel(key){
+  if(key==="annee") return "Année complète";
+  if(key==="custom") return "Période personnalisée";
+  if(/^p\d+$/.test(key)) return periodLabel(parseInt(key.slice(1),10));
+  return key;
+}
+function resolvePeriodByKey(key, customStart, customEnd){
+  if(key==="custom"){
+    var s = customStart ? new Date(customStart).getTime() : 0;
+    var e = customEnd ? new Date(customEnd+"T23:59:59").getTime() : Date.now();
+    return {key:"custom", label:periodKeyLabel("custom"), bounds:[s,e]};
+  }
+  if(key==="annee") return {key:"annee", label:periodKeyLabel("annee"), bounds:[0,Infinity]};
+  return {key:key, label:periodKeyLabel(key), bounds:periodBoundsFor(key)};
+}
+function exportPeriodsList(mode, key, customStart, customEnd){
+  if(mode==="multi"){
+    var n = periodCount();
+    var list = [];
+    for(var i=1;i<=n;i++){ list.push(resolvePeriodByKey("p"+i)); }
+    list.push(resolvePeriodByKey("annee"));
+    return list;
+  }
+  return [resolvePeriodByKey(key, customStart, customEnd)];
+}
+function fileDateStamp(){
+  var d = new Date();
+  return pad(d.getDate())+"/"+pad(d.getMonth()+1)+"/"+d.getFullYear()+" à "+pad(d.getHours())+":"+pad(d.getMinutes());
+}
+function exportStampLine(periodsList){
+  if(periodsList.length===1){
+    return "Export généré le "+fileDateStamp()+" — Période : "+periodsList[0].label;
+  }
+  return "Export généré le "+fileDateStamp()+" — Périodes comparées : "+periodsList.map(function(p){return p.label;}).join(", ");
 }
 
 /* ---------------- Sessions (historique par classe, indépendant du choix de classe dans le menu) ---------------- */
@@ -1357,6 +1426,10 @@ function renderReussiteView(main){
   var students = activeStudents(state.currentClasse);
   var html = '<div class="period-row">'+periodSelectorHtml()+
     '<button class="info-btn" data-info="mozartgrid" data-info-title="Critères favorisant la réussite — grille de référence" style="margin-left:auto;">i</button></div>';
+  html += '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">'+
+    '<button class="btn" id="btnReussitePdfSingle" style="margin:0;width:auto;padding:9px 12px;font-size:12.5px;">Exporter en PDF (période affichée)</button>'+
+    '<button class="btn" id="btnReussitePdfMulti" style="margin:0;width:auto;padding:9px 12px;font-size:12.5px;">Comparer les périodes (PDF)</button>'+
+    '</div>';
   if(students.length===0){ main.innerHTML = html+'<div class="empty"><h3>Rien à afficher</h3></div>'; bindPeriodSelector(); return; }
   var bounds = periodBounds();
   var rows = students.map(function(s){
@@ -1398,6 +1471,49 @@ function renderReussiteView(main){
       renderReussiteView(main);
     });
   });
+  document.getElementById("btnReussitePdfSingle").addEventListener("click", function(){
+    printReussitePdf([resolvePeriodByKey(state.period, state.customStart, state.customEnd)]);
+  });
+  document.getElementById("btnReussitePdfMulti").addEventListener("click", function(){
+    var n = periodCount(); var list = [];
+    for(var i=1;i<=n;i++){ list.push(resolvePeriodByKey("p"+i)); }
+    list.push(resolvePeriodByKey("annee"));
+    printReussitePdf(list);
+  });
+}
+function printReussitePdf(periods){
+  var students = activeStudents(state.currentClasse);
+  var stamp = exportStampLine(periods);
+  var html = '<div style="font-family:-apple-system,Arial,sans-serif;">';
+  html += '<h1 style="font-size:18px;margin:0 0 2px 0;">Critères favorisant la réussite — '+escapeHtml(state.currentClasse)+'</h1>';
+  html += '<div style="font-size:11px;color:#777;margin-bottom:10px;">'+escapeHtml(stamp)+'</div>';
+  html += '<table style="border-collapse:collapse;width:100%;font-size:'+(periods.length>1?"9px":"11px")+';">';
+  html += '<thead><tr><th style="text-align:left;padding:4px 6px;border-bottom:2px solid #333;">Élève</th>';
+  periods.forEach(function(p){
+    REUSSITE_CRITERES.forEach(function(cr){
+      html += '<th style="text-align:center;padding:3px 3px;border-bottom:2px solid #333;">'+escapeHtml(cr.label)+(periods.length>1?'<br><span style="font-weight:400;color:#777;">('+escapeHtml(p.label)+')</span>':'')+'</th>';
+    });
+  });
+  html += '</tr></thead><tbody>';
+  students.forEach(function(s){
+    html += '<tr><td style="padding:3px 6px;border-bottom:1px solid #eee;font-weight:600;white-space:nowrap;">'+escapeHtml(s.prenom)+' '+escapeHtml(s.nom.toUpperCase())+'</td>';
+    periods.forEach(function(p){
+      REUSSITE_CRITERES.forEach(function(cr){
+        var v = compositeScoreForBounds(s.id, cr.cats, p.bounds);
+        var col = colorForPct(v);
+        html += '<td style="text-align:center;padding:3px 3px;border-bottom:1px solid #eee;background:'+col.bg+';color:'+col.fg+';font-weight:700;">'+(v===null?"—":v+"%")+'</td>';
+      });
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  document.getElementById("printView").innerHTML = html;
+  var pageStyle = document.getElementById("dynamicPageStyle");
+  if(pageStyle) pageStyle.textContent = "@page{size:A4 landscape;margin:9mm;}";
+  var oldTitle = document.title;
+  document.title = "ClasseVueReussite"+sanitizeFilePart(state.currentClasse)+"_"+fileStamp();
+  window.print();
+  setTimeout(function(){ document.title = oldTitle; }, 500);
 }
 function periodSelectorHtml(){
   var opts = '<option value="annee"'+(state.period==="annee"?" selected":"")+'>Année complète</option>';
@@ -1711,6 +1827,18 @@ document.querySelectorAll(".drawer-group-title[data-group]").forEach(function(bt
     btn.classList.toggle("open", willOpen);
   });
 });
+function periodKeyOptionsHtml(selectedKey, includeCustom){
+  var n = periodCount();
+  var opts = '<option value="annee"'+(selectedKey==="annee"?" selected":"")+'>Année complète</option>';
+  for(var i=1;i<=n;i++){
+    var k = "p"+i;
+    opts += '<option value="'+k+'"'+(selectedKey===k?" selected":"")+'>'+periodLabel(i)+'</option>';
+  }
+  if(includeCustom!==false){
+    opts += '<option value="custom"'+(selectedKey==="custom"?" selected":"")+'>Dates personnalisées ci-dessous</option>';
+  }
+  return opts;
+}
 function openDrawer(){
   renderAnneeSummary();
   renderBackupBanner();
@@ -1722,6 +1850,14 @@ function openDrawer(){
   expSel.innerHTML = classes.map(function(c){ return '<option value="'+encodeURIComponent(c)+'"'+(c===state.currentClasse?" selected":"")+'>'+escapeHtml(c)+'</option>'; }).join("") || '<option value="">Aucune classe</option>';
   var objSel = document.getElementById("objClasseSelect");
   objSel.innerHTML = expSel.innerHTML;
+
+  document.getElementById("exportPeriodModeSelect").value = state.exportPeriodMode;
+  document.getElementById("exportPeriodKeySelect").innerHTML = periodKeyOptionsHtml(state.exportPeriodKey);
+  document.getElementById("exportPeriodKeySelect").disabled = (state.exportPeriodMode==="multi");
+  document.getElementById("exportCustomStartInput").value = state.exportCustomStart;
+  document.getElementById("exportCustomEndInput").value = state.exportCustomEnd;
+  document.getElementById("metavuePeriodSelect").innerHTML = periodKeyOptionsHtml(state.metavuePeriodKey, false);
+
   document.getElementById("drawer").classList.add("open"); document.getElementById("overlay").classList.add("open");
 }
 function closeDrawerFn(){ document.getElementById("drawer").classList.remove("open"); document.getElementById("overlay").classList.remove("open"); }
@@ -1730,6 +1866,25 @@ document.getElementById("progressionWindowSelect").addEventListener("change", fu
   state.progressionWindow = parseInt(this.value,10)||3;
   persist();
 });
+document.getElementById("exportPeriodModeSelect").addEventListener("change", function(){
+  state.exportPeriodMode = this.value;
+  document.getElementById("exportPeriodKeySelect").disabled = (this.value==="multi");
+  persist();
+});
+document.getElementById("exportPeriodKeySelect").addEventListener("change", function(){
+  state.exportPeriodKey = this.value;
+  document.getElementById("exportCustomDates").style.display = (this.value==="custom") ? "block" : "none";
+  persist();
+});
+document.getElementById("exportCustomToggle").addEventListener("click", function(){
+  var el = document.getElementById("exportCustomDates");
+  var willShow = el.style.display==="none";
+  el.style.display = willShow ? "block" : "none";
+  this.textContent = "Dates personnalisées "+(willShow?"▾":"▸");
+});
+document.getElementById("exportCustomStartInput").addEventListener("change", function(){ state.exportCustomStart=this.value; persist(); });
+document.getElementById("exportCustomEndInput").addEventListener("change", function(){ state.exportCustomEnd=this.value; persist(); });
+document.getElementById("metavuePeriodSelect").addEventListener("change", function(){ state.metavuePeriodKey=this.value; persist(); });
 document.getElementById("btnCloseDrawer").addEventListener("click", closeDrawerFn);
 
 /* ---------------- Modifier l'année scolaire (modal dédié) ---------------- */
@@ -2001,6 +2156,20 @@ var printModal = document.getElementById("printModal");
 function sanitizeFilePart(s){ return (s||"").toString().trim().replace(/[\\/:*?"<>|]/g,"-").replace(/\s+/g,"-"); }
 document.getElementById("btnPrintProfiles").addEventListener("click", function(){ printModal.classList.add("open"); });
 document.getElementById("printModalCancel").addEventListener("click", function(){ printModal.classList.remove("open"); });
+function comparisonTableHtml(studentId_, periods){
+  var t = '<table style="border-collapse:collapse;width:100%;font-size:10.5px;margin-top:10px;"><thead><tr><th style="text-align:left;padding:4px 6px;border-bottom:2px solid #ccc;">Période</th>'+
+    CATEGORIES.map(function(c){return '<th style="text-align:center;padding:4px 4px;border-bottom:2px solid #ccc;">'+escapeHtml(c.label)+'</th>';}).join("")+'</tr></thead><tbody>';
+  periods.forEach(function(p){
+    var scores = dimensionScoresForBounds(studentId_, p.bounds);
+    t += '<tr><td style="padding:4px 6px;font-weight:700;">'+escapeHtml(p.label)+'</td>'+
+      CATEGORIES.map(function(c){
+        var v = scores[c.id]; var col = colorForPct(v);
+        return '<td style="text-align:center;padding:4px 4px;background:'+col.bg+';color:'+col.fg+';font-weight:700;">'+(v===null?"—":v+"%")+'</td>';
+      }).join("")+'</tr>';
+  });
+  t += '</tbody></table>';
+  return t;
+}
 document.getElementById("printModalGo").addEventListener("click", function(){
   var withRadar = document.getElementById("printOptRadar").checked;
   var withStats = document.getElementById("printOptStats").checked;
@@ -2008,21 +2177,31 @@ document.getElementById("printModalGo").addEventListener("click", function(){
   var exportClasse = decodeURIComponent(document.getElementById("exportClasseSelect").value || "");
   printModal.classList.remove("open");
   var students = activeStudents(exportClasse);
-  var html = "";
+  var periods = exportPeriodsList(state.exportPeriodMode, state.exportPeriodKey, state.exportCustomStart, state.exportCustomEnd);
+  var isMulti = periods.length>1;
+  var mainPeriod = isMulti ? periods[periods.length-2] : periods[0];
+  var yearBounds = resolvePeriodByKey("annee").bounds;
+  var stamp = exportStampLine(periods);
+  var html = '<div style="font-size:11px;color:#777;text-align:right;margin-bottom:6px;">'+escapeHtml(stamp)+'</div>';
   students.forEach(function(s){
     var cov = coverage(s);
-    var scoresCurrent = dimensionScoresForBounds(s.id, currentSemesterBounds());
-    var scoresYear = dimensionScoresForBounds(s.id, [0,Infinity]);
+    var scoresCurrent = dimensionScoresForBounds(s.id, mainPeriod.bounds);
+    var scoresYear = dimensionScoresForBounds(s.id, yearBounds);
     var objectives = state.objectives[s.id] || null;
     html += '<div class="print-student">';
     html += '<h1 style="font-size:20px;margin-bottom:2px;">'+escapeHtml(s.prenom)+' '+escapeHtml(s.nom.toUpperCase())+'</h1>';
     html += '<div style="color:#555;font-size:13px;margin-bottom:14px;">'+escapeHtml(s.classe)+'</div>';
     if(withStats){
-      html += '<div style="color:#555;font-size:13px;margin-bottom:14px;">Couverture '+cov.pct+'% ('+cov.categoriesFilled+'/5 catégories) — dernière observation : '+(cov.lastDate||"—")+'</div>';
+      html += '<div style="color:#555;font-size:13px;margin-bottom:14px;">Couverture '+cov.pct+'% ('+cov.categoriesFilled+'/'+CATEGORIES.length+' catégories) — dernière observation : '+(cov.lastDate||"—")+'</div>';
     }
-    if(withRadar){ html += radarSVG(scoresCurrent, 320, scoresYear, objectives, visibleRadarCategories()); }
+    if(withRadar){
+      html += radarSVG(scoresCurrent, 320, scoresYear, objectives, visibleRadarCategories());
+      html += '<div style="text-align:center;font-size:11px;color:#777;margin-top:-6px;">Trait plein : '+escapeHtml(mainPeriod.label)+' · Pointillé : Année complète</div>';
+    }
+    if(isMulti){ html += comparisonTableHtml(s.id, periods); }
     if(withFacts){
-      var obsList = studentObs(s.id, true).slice().sort(function(a,b){return b.ms-a.ms;});
+      var factBounds = isMulti ? [0,Infinity] : periods[0].bounds;
+      var obsList = state.observations.filter(function(o){ return o.studentId===s.id && o.ms>=factBounds[0] && o.ms<=factBounds[1]; }).slice().sort(function(a,b){return b.ms-a.ms;});
       html += '<div style="margin-top:16px;"><div style="font-size:12px;text-transform:uppercase;color:#777;font-weight:700;margin-bottom:6px;">Faits observés</div>';
       if(obsList.length===0){ html += '<div style="font-size:13px;color:#777;">Aucune observation.</div>'; }
       obsList.forEach(function(o){
@@ -2034,6 +2213,8 @@ document.getElementById("printModalGo").addEventListener("click", function(){
     html += '</div>';
   });
   document.getElementById("printView").innerHTML = html || "<p>Aucun élève.</p>";
+  var pageStyle = document.getElementById("dynamicPageStyle");
+  if(pageStyle) pageStyle.textContent = "@page{size:A4 portrait;margin:12mm;}";
   var oldTitle = document.title;
   document.title = "ClasseVueObs"+sanitizeFilePart(exportClasse)+"_"+fileStamp();
   window.print();
@@ -2044,20 +2225,56 @@ document.getElementById("printModalGo").addEventListener("click", function(){
 document.getElementById("btnExportXls").addEventListener("click", function(){
   var exportClasse = decodeURIComponent(document.getElementById("exportClasseSelect").value || "");
   var students = activeStudents(exportClasse);
-  var rows = "<tr><th>Classe</th><th>Nom</th><th>Prenom</th><th>Couverture</th><th>Reussite</th><th>Progression</th><th>A aider</th>"+
-    CATEGORIES.map(function(c){return "<th>"+c.label+"</th>";}).join("")+"</tr>";
+  var periods = exportPeriodsList(state.exportPeriodMode, state.exportPeriodKey, state.exportCustomStart, state.exportCustomEnd);
+  var stamp = exportStampLine(periods);
+
+  var header = "<tr><td colspan='"+(3+periods.length*(2+CATEGORIES.length)+2)+"'>ClasseVue — "+stamp+"</td></tr>";
+  var headRow1 = "<tr><th>Classe</th><th>Nom</th><th>Prenom</th>";
+  periods.forEach(function(p){
+    headRow1 += "<th colspan='"+(2+CATEGORIES.length)+"' style='text-align:center;'>"+p.label+"</th>";
+  });
+  headRow1 += "<th>Progression</th><th>A aider</th></tr>";
+  var headRow2 = "<tr><th></th><th></th><th></th>";
+  periods.forEach(function(){
+    headRow2 += "<th>Couverture</th><th>Reussite</th>"+CATEGORIES.map(function(c){return "<th>"+c.label+"</th>";}).join("");
+  });
+  headRow2 += "<th>(vs période préc. réelle)</th><th>(aujourd'hui)</th></tr>";
+
+  var rows = header + headRow1 + headRow2;
   students.forEach(function(s){
     var cov = coverage(s);
-    var scores = dimensionScores(s.id, true);
-    var success = successScoreForBounds(s.id, currentSemesterBounds());
     var prog = progressionA(s); if(prog===null) prog = progressionBSimple(s);
     var aider = needsHelp(s);
-    rows += "<tr><td>"+escapeHtml(s.classe)+"</td><td>"+escapeHtml(s.nom)+"</td><td>"+escapeHtml(s.prenom)+"</td><td>"+cov.pct+"</td>"+
-      "<td>"+(success===null?"":success)+"</td><td>"+(prog===null?"":prog)+"</td><td>"+(aider?"Oui":"Non")+"</td>"+
+    var line = "<tr><td>"+escapeHtml(s.classe)+"</td><td>"+escapeHtml(s.nom)+"</td><td>"+escapeHtml(s.prenom)+"</td>";
+    periods.forEach(function(p){
+      var scores = dimensionScoresForBounds(s.id, p.bounds);
+      var success = successScoreForBounds(s.id, p.bounds);
+      line += "<td>"+cov.pct+"</td><td>"+(success===null?"":success)+"</td>"+
+        CATEGORIES.map(function(c){ var v=scores[c.id]; return "<td>"+(v===null?"":v)+"</td>"; }).join("");
+    });
+    line += "<td>"+(prog===null?"":prog)+"</td><td>"+(aider?"Oui":"Non")+"</td></tr>";
+    rows += line;
+  });
+  var html = "<html><head><meta charset='UTF-8'></head><body><table border='1'>"+rows+"</table></body></html>";
+  var periodTag = periods.length===1 ? sanitizeFilePart(periods[0].label) : "Comparaison";
+  download("ClasseVueComp"+sanitizeFilePart(exportClasse)+"_"+periodTag+"_"+fileStamp()+".xls", html, "application/vnd.ms-excel");
+});
+
+/* ---------------- Export MetaVue (XLS) — toujours une seule période, format minimal ---------------- */
+document.getElementById("btnExportMetavue").addEventListener("click", function(){
+  var exportClasse = decodeURIComponent(document.getElementById("exportClasseSelect").value || "");
+  var students = activeStudents(exportClasse);
+  var period = resolvePeriodByKey(state.metavuePeriodKey);
+  var stamp = exportStampLine([period]);
+  var rows = "<tr><td colspan='"+(3+CATEGORIES.length)+"'>ClasseVue — Export MetaVue — "+stamp+"</td></tr>";
+  rows += "<tr><th>Classe</th><th>Nom</th><th>Prenom</th>"+CATEGORIES.map(function(c){return "<th>"+c.label+"</th>";}).join("")+"</tr>";
+  students.forEach(function(s){
+    var scores = dimensionScoresForBounds(s.id, period.bounds);
+    rows += "<tr><td>"+escapeHtml(s.classe)+"</td><td>"+escapeHtml(s.nom)+"</td><td>"+escapeHtml(s.prenom)+"</td>"+
       CATEGORIES.map(function(c){ var v=scores[c.id]; return "<td>"+(v===null?"":v)+"</td>"; }).join("")+"</tr>";
   });
   var html = "<html><head><meta charset='UTF-8'></head><body><table border='1'>"+rows+"</table></body></html>";
-  download("ClasseVueComp"+sanitizeFilePart(exportClasse)+"_"+fileStamp()+".xls", html, "application/vnd.ms-excel");
+  download("ClasseVueMetaVue"+sanitizeFilePart(exportClasse)+"_"+sanitizeFilePart(period.label)+"_"+fileStamp()+".xls", html, "application/vnd.ms-excel");
 });
 
 /* ---------------- Installation sur l'écran d'accueil ---------------- */
