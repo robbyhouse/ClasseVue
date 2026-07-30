@@ -362,10 +362,12 @@
 
       <button class="btn" id="btnPrintProfiles">Profils de la classe (impression / PDF)</button>
       <button class="btn" id="btnExportXls">Comparaison classe (XLS)</button>
+      <button class="btn" id="btnReussitePdf">Critères de réussite (impression / PDF)</button>
+      <button class="btn" id="btnReussiteXls">Critères de réussite (XLS)</button>
     </div>
 
     <div class="drawer-section">
-      <div class="section-title-row"><h3>Export MetaVue</h3></div>
+      <div class="section-title-row"><h3>EXPORT outil MetaVue</h3></div>
       <p class="hint">Nom/prénom en clair, les 7 catégories observées, toujours sur une seule période (pour rester compatible avec l'outil anonymiseur).</p>
       <select id="metavuePeriodSelect" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:13.5px;margin-bottom:8px;"></select>
       <button class="btn" id="btnExportMetavue">Exporter (XLS)</button>
@@ -1426,10 +1428,7 @@ function renderReussiteView(main){
   var students = activeStudents(state.currentClasse);
   var html = '<div class="period-row">'+periodSelectorHtml()+
     '<button class="info-btn" data-info="mozartgrid" data-info-title="Critères favorisant la réussite — grille de référence" style="margin-left:auto;">i</button></div>';
-  html += '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">'+
-    '<button class="btn" id="btnReussitePdfSingle" style="margin:0;width:auto;padding:9px 12px;font-size:12.5px;">Exporter en PDF (période affichée)</button>'+
-    '<button class="btn" id="btnReussitePdfMulti" style="margin:0;width:auto;padding:9px 12px;font-size:12.5px;">Comparer les périodes (PDF)</button>'+
-    '</div>';
+  html += '<p style="font-size:11.5px;color:var(--ink-soft);margin:-6px 0 12px 0;">Les exports (PDF, XLS) sont disponibles dans Réglages → Exports pédagogiques.</p>';
   if(students.length===0){ main.innerHTML = html+'<div class="empty"><h3>Rien à afficher</h3></div>'; bindPeriodSelector(); return; }
   var bounds = periodBounds();
   var rows = students.map(function(s){
@@ -1471,28 +1470,23 @@ function renderReussiteView(main){
       renderReussiteView(main);
     });
   });
-  document.getElementById("btnReussitePdfSingle").addEventListener("click", function(){
-    printReussitePdf([resolvePeriodByKey(state.period, state.customStart, state.customEnd)]);
-  });
-  document.getElementById("btnReussitePdfMulti").addEventListener("click", function(){
-    var n = periodCount(); var list = [];
-    for(var i=1;i<=n;i++){ list.push(resolvePeriodByKey("p"+i)); }
-    list.push(resolvePeriodByKey("annee"));
-    printReussitePdf(list);
-  });
 }
-function printReussitePdf(periods){
-  var students = activeStudents(state.currentClasse);
+function reussiteExportGroups(){
+  return [{id:"confiance", label:"Confiance", isConfiance:true}].concat(REUSSITE_CRITERES);
+}
+function printReussitePdf(periods, classe){
+  var students = activeStudents(classe);
   var isMulti = periods.length>1;
   var orderedPeriods = isMulti ? [resolvePeriodByKey("annee")].concat(periods.filter(function(p){return p.key!=="annee";})) : periods;
+  var groups = reussiteExportGroups();
   var stamp = exportStampLine(periods);
-  var fontSize = isMulti ? (orderedPeriods.length>=3 ? "7.5px" : "8.5px") : "11px";
+  var fontSize = isMulti ? (orderedPeriods.length>=3 ? "7px" : "8px") : "10.5px";
   var html = '<div style="font-family:-apple-system,Arial,sans-serif;">';
-  html += '<h1 style="font-size:18px;margin:0 0 2px 0;">Critères favorisant la réussite — '+escapeHtml(state.currentClasse)+'</h1>';
+  html += '<h1 style="font-size:18px;margin:0 0 2px 0;">Critères favorisant la réussite — '+escapeHtml(classe)+'</h1>';
   html += '<div style="font-size:11px;color:#777;margin-bottom:10px;">'+escapeHtml(stamp)+'</div>';
   html += '<table id="reussitePdfTable" style="border-collapse:collapse;font-size:'+fontSize+';">';
   html += '<thead><tr><th style="text-align:left;padding:3px 5px;border-bottom:2px solid #333;white-space:nowrap;">Élève</th>';
-  REUSSITE_CRITERES.forEach(function(cr){
+  groups.forEach(function(cr){
     orderedPeriods.forEach(function(p){
       html += '<th style="text-align:center;padding:3px 2px;border-bottom:2px solid #333;">'+escapeHtml(cr.label)+(isMulti?'<br><span style="font-weight:400;color:#777;">('+escapeHtml(p.label)+')</span>':'')+'</th>';
     });
@@ -1500,11 +1494,17 @@ function printReussitePdf(periods){
   html += '</tr></thead><tbody>';
   students.forEach(function(s){
     html += '<tr><td style="padding:3px 5px;border-bottom:1px solid #eee;font-weight:600;white-space:nowrap;">'+escapeHtml(s.prenom)+' '+escapeHtml(s.nom.toUpperCase())+'</td>';
-    REUSSITE_CRITERES.forEach(function(cr){
+    groups.forEach(function(cr){
       orderedPeriods.forEach(function(p){
-        var v = compositeScoreForBounds(s.id, cr.cats, p.bounds);
-        var col = colorForPct(v);
-        html += '<td style="text-align:center;padding:3px 2px;border-bottom:1px solid #eee;background:'+col.bg+';color:'+col.fg+';font-weight:700;">'+(v===null?"—":v+"%")+'</td>';
+        if(cr.isConfiance){
+          var cd = confidenceDetail(s, p.bounds);
+          var col = colorForPct(cd.pct);
+          html += '<td style="text-align:center;padding:3px 2px;border-bottom:1px solid #eee;background:'+col.bg+';color:'+col.fg+';font-weight:700;">'+cd.pct+'%<br><span style="font-weight:400;font-size:0.85em;">('+cd.withFacts+'/'+cd.applicable+')</span></td>';
+        } else {
+          var v = compositeScoreForBounds(s.id, cr.cats, p.bounds);
+          var col2 = colorForPct(v);
+          html += '<td style="text-align:center;padding:3px 2px;border-bottom:1px solid #eee;background:'+col2.bg+';color:'+col2.fg+';font-weight:700;">'+(v===null?"—":v+"%")+'</td>';
+        }
       });
     });
     html += '</tr>';
@@ -1525,9 +1525,48 @@ function printReussitePdf(periods){
     table.style.transform = "scale("+scale.toFixed(3)+")";
   }
   var oldTitle = document.title;
-  document.title = "ClasseVueReussite"+sanitizeFilePart(state.currentClasse)+"_"+fileStamp();
+  document.title = "ClasseVueReussite"+sanitizeFilePart(classe)+"_"+fileStamp();
   window.print();
   setTimeout(function(){ document.title = oldTitle; }, 500);
+}
+function exportReussiteXls(periods, classe){
+  var students = activeStudents(classe);
+  var isMulti = periods.length>1;
+  var orderedPeriods = isMulti ? [resolvePeriodByKey("annee")].concat(periods.filter(function(p){return p.key!=="annee";})) : periods;
+  var groups = reussiteExportGroups();
+  var stamp = exportStampLine(periods);
+  var totalCols = 3 + groups.length*orderedPeriods.length;
+  var rows = "<tr><td colspan='"+totalCols+"'>Critères favorisant la réussite — "+stamp+"</td></tr>";
+  var headRow1 = "<tr><th>Classe</th><th>Nom</th><th>Prenom</th>";
+  groups.forEach(function(cr){
+    headRow1 += "<th colspan='"+orderedPeriods.length+"' style='text-align:center;'>"+cr.label+"</th>";
+  });
+  headRow1 += "</tr>";
+  var headRow2 = "<tr><th></th><th></th><th></th>";
+  groups.forEach(function(){
+    orderedPeriods.forEach(function(p){ headRow2 += "<th>"+p.label+"</th>"; });
+  });
+  headRow2 += "</tr>";
+  rows += headRow1 + headRow2;
+  students.forEach(function(s){
+    var line = "<tr><td>"+escapeHtml(s.classe)+"</td><td>"+escapeHtml(s.nom)+"</td><td>"+escapeHtml(s.prenom)+"</td>";
+    groups.forEach(function(cr){
+      orderedPeriods.forEach(function(p){
+        if(cr.isConfiance){
+          var cd = confidenceDetail(s, p.bounds);
+          line += "<td>"+cd.pct+"% ("+cd.withFacts+"/"+cd.applicable+")</td>";
+        } else {
+          var v = compositeScoreForBounds(s.id, cr.cats, p.bounds);
+          line += "<td>"+(v===null?"":v)+"</td>";
+        }
+      });
+    });
+    line += "</tr>";
+    rows += line;
+  });
+  var html = "<html><head><meta charset='UTF-8'></head><body><table border='1'>"+rows+"</table></body></html>";
+  var periodTag = periods.length===1 ? sanitizeFilePart(periods[0].label) : "Comparaison";
+  download("ClasseVueReussite"+sanitizeFilePart(classe)+"_"+periodTag+"_"+fileStamp()+".xls", html, "application/vnd.ms-excel");
 }
 function periodSelectorHtml(){
   var opts = '<option value="annee"'+(state.period==="annee"?" selected":"")+'>Année complète</option>';
@@ -2291,6 +2330,16 @@ document.getElementById("btnExportXls").addEventListener("click", function(){
 });
 
 /* ---------------- Export MetaVue (XLS) — toujours une seule période, format minimal ---------------- */
+document.getElementById("btnReussitePdf").addEventListener("click", function(){
+  var exportClasse = decodeURIComponent(document.getElementById("exportClasseSelect").value || "");
+  var periods = exportPeriodsList(state.exportPeriodMode, state.exportPeriodKey, state.exportCustomStart, state.exportCustomEnd);
+  printReussitePdf(periods, exportClasse);
+});
+document.getElementById("btnReussiteXls").addEventListener("click", function(){
+  var exportClasse = decodeURIComponent(document.getElementById("exportClasseSelect").value || "");
+  var periods = exportPeriodsList(state.exportPeriodMode, state.exportPeriodKey, state.exportCustomStart, state.exportCustomEnd);
+  exportReussiteXls(periods, exportClasse);
+});
 document.getElementById("btnExportMetavue").addEventListener("click", function(){
   var exportClasse = decodeURIComponent(document.getElementById("exportClasseSelect").value || "");
   var students = activeStudents(exportClasse);
