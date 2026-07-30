@@ -202,6 +202,8 @@
   .annee-summary .big{font-weight:700;font-size:14.5px;}
   #modeSemestreBtn.mode-active, #modeTrimestreBtn.mode-active{background:var(--tab-bg);color:#fff;border-color:var(--tab-bg);}
   .lastbackup-banner{border-radius:10px;padding:10px 12px;margin-bottom:18px;font-size:12.5px;font-weight:600;background:var(--priority-bg);color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .install-banner{border-radius:10px;padding:12px;margin-bottom:18px;font-size:12.5px;font-weight:600;background:var(--priority-bg);color:var(--accent);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;}
+  .install-banner .btn{margin:0;width:auto;flex-shrink:0;padding:8px 14px;white-space:nowrap;}
   .lastbackup-banner.stale{background:#F6DCD8;color:var(--neg);}
   .session-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--paper-raised);border-radius:12px;padding:9px 12px;margin-bottom:10px;box-shadow:var(--shadow);font-size:12.5px;}
   .session-bar .txt{color:var(--ink-soft);}
@@ -262,11 +264,9 @@
   <div class="drawer-body">
 
     <div class="lastbackup-banner" id="lastBackupBanner"></div>
-    <div class="lastbackup-banner" id="installBanner" style="display:none;background:var(--priority-bg);color:var(--accent);">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-        <span id="installBannerText">Installer ClasseVue sur l'écran d'accueil</span>
-        <button class="btn primary" id="btnInstallApp" style="margin:0;width:auto;padding:8px 14px;white-space:nowrap;">Installer</button>
-      </div>
+    <div class="install-banner" id="installBanner" style="display:none;">
+      <span id="installBannerText">Installer ClasseVue sur l'écran d'accueil</span>
+      <button class="btn primary" id="btnInstallApp">Installer</button>
     </div>
 
     <button class="drawer-group-title" data-group="demarrage">Démarrage de l'année <span class="chevron">▸</span></button>
