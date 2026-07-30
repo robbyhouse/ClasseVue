@@ -413,7 +413,7 @@
   <div class="modal-box">
     <h3>Profils de la classe — que veux-tu inclure ?</h3>
     <label class="modal-check"><input type="checkbox" id="printOptRadar" checked> Radar des 5 dimensions</label>
-    <label class="modal-check"><input type="checkbox" id="printOptStats" checked> Couverture et statistiques</label>
+    <label class="modal-check"><input type="checkbox" id="printOptStats" checked> Confiance et statistiques</label>
     <label class="modal-check"><input type="checkbox" id="printOptFacts" checked> Liste des faits observés (historique détaillé)</label>
     <div class="modal-actions">
       <button class="btn" id="printModalCancel">Annuler</button>
@@ -1853,7 +1853,7 @@ function openDrawer(){
 
   document.getElementById("exportPeriodModeSelect").value = state.exportPeriodMode;
   document.getElementById("exportPeriodKeySelect").innerHTML = periodKeyOptionsHtml(state.exportPeriodKey);
-  document.getElementById("exportPeriodKeySelect").disabled = (state.exportPeriodMode==="multi");
+  updateExportPeriodUIVisibility();
   document.getElementById("exportCustomStartInput").value = state.exportCustomStart;
   document.getElementById("exportCustomEndInput").value = state.exportCustomEnd;
   document.getElementById("metavuePeriodSelect").innerHTML = periodKeyOptionsHtml(state.metavuePeriodKey, false);
@@ -1866,9 +1866,15 @@ document.getElementById("progressionWindowSelect").addEventListener("change", fu
   state.progressionWindow = parseInt(this.value,10)||3;
   persist();
 });
+function updateExportPeriodUIVisibility(){
+  var multi = state.exportPeriodMode==="multi";
+  document.getElementById("exportPeriodKeySelect").style.display = multi ? "none" : "block";
+  document.getElementById("exportCustomToggle").style.display = multi ? "none" : "block";
+  if(multi) document.getElementById("exportCustomDates").style.display = "none";
+}
 document.getElementById("exportPeriodModeSelect").addEventListener("change", function(){
   state.exportPeriodMode = this.value;
-  document.getElementById("exportPeriodKeySelect").disabled = (this.value==="multi");
+  updateExportPeriodUIVisibility();
   persist();
 });
 document.getElementById("exportPeriodKeySelect").addEventListener("change", function(){
@@ -2184,6 +2190,7 @@ document.getElementById("printModalGo").addEventListener("click", function(){
   var stamp = exportStampLine(periods);
   var html = '<div style="font-size:11px;color:#777;text-align:right;margin-bottom:6px;">'+escapeHtml(stamp)+'</div>';
   students.forEach(function(s){
+    var conf = confidenceDetail(s, mainPeriod.bounds);
     var cov = coverage(s);
     var scoresCurrent = dimensionScoresForBounds(s.id, mainPeriod.bounds);
     var scoresYear = dimensionScoresForBounds(s.id, yearBounds);
@@ -2192,7 +2199,7 @@ document.getElementById("printModalGo").addEventListener("click", function(){
     html += '<h1 style="font-size:20px;margin-bottom:2px;">'+escapeHtml(s.prenom)+' '+escapeHtml(s.nom.toUpperCase())+'</h1>';
     html += '<div style="color:#555;font-size:13px;margin-bottom:14px;">'+escapeHtml(s.classe)+'</div>';
     if(withStats){
-      html += '<div style="color:#555;font-size:13px;margin-bottom:14px;">Couverture '+cov.pct+'% ('+cov.categoriesFilled+'/'+CATEGORIES.length+' catégories) — dernière observation : '+(cov.lastDate||"—")+'</div>';
+      html += '<div style="color:#555;font-size:13px;margin-bottom:14px;">Confiance '+conf.pct+'% ('+conf.withFacts+'/'+conf.applicable+' séances) — dernière observation : '+(cov.lastDate||"—")+'</div>';
     }
     if(withRadar){
       html += radarSVG(scoresCurrent, 320, scoresYear, objectives, visibleRadarCategories());
@@ -2226,31 +2233,40 @@ document.getElementById("btnExportXls").addEventListener("click", function(){
   var exportClasse = decodeURIComponent(document.getElementById("exportClasseSelect").value || "");
   var students = activeStudents(exportClasse);
   var periods = exportPeriodsList(state.exportPeriodMode, state.exportPeriodKey, state.exportCustomStart, state.exportCustomEnd);
+  var isMulti = periods.length>1;
+  // Pour la comparaison, on affiche Année en premier, puis les périodes dans l'ordre.
+  var orderedPeriods = isMulti ? [resolvePeriodByKey("annee")].concat(periods.filter(function(p){return p.key!=="annee";})) : periods;
   var stamp = exportStampLine(periods);
 
-  var header = "<tr><td colspan='"+(3+periods.length*(2+CATEGORIES.length)+2)+"'>ClasseVue — "+stamp+"</td></tr>";
+  var CRITERES_XLS = [{id:"confiance", label:"Confiance"}, {id:"reussite", label:"Reussite"}].concat(
+    CATEGORIES.map(function(c){ return {id:c.id, label:c.label}; })
+  );
+  var totalCols = 3 + CRITERES_XLS.length*orderedPeriods.length + 2;
+  var header = "<tr><td colspan='"+totalCols+"'>ClasseVue — "+stamp+"</td></tr>";
   var headRow1 = "<tr><th>Classe</th><th>Nom</th><th>Prenom</th>";
-  periods.forEach(function(p){
-    headRow1 += "<th colspan='"+(2+CATEGORIES.length)+"' style='text-align:center;'>"+p.label+"</th>";
+  CRITERES_XLS.forEach(function(cr){
+    headRow1 += "<th colspan='"+orderedPeriods.length+"' style='text-align:center;'>"+cr.label+"</th>";
   });
   headRow1 += "<th>Progression</th><th>A aider</th></tr>";
   var headRow2 = "<tr><th></th><th></th><th></th>";
-  periods.forEach(function(){
-    headRow2 += "<th>Couverture</th><th>Reussite</th>"+CATEGORIES.map(function(c){return "<th>"+c.label+"</th>";}).join("");
+  CRITERES_XLS.forEach(function(){
+    orderedPeriods.forEach(function(p){ headRow2 += "<th>"+p.label+"</th>"; });
   });
   headRow2 += "<th>(vs période préc. réelle)</th><th>(aujourd'hui)</th></tr>";
 
   var rows = header + headRow1 + headRow2;
   students.forEach(function(s){
-    var cov = coverage(s);
     var prog = progressionA(s); if(prog===null) prog = progressionBSimple(s);
     var aider = needsHelp(s);
     var line = "<tr><td>"+escapeHtml(s.classe)+"</td><td>"+escapeHtml(s.nom)+"</td><td>"+escapeHtml(s.prenom)+"</td>";
-    periods.forEach(function(p){
-      var scores = dimensionScoresForBounds(s.id, p.bounds);
-      var success = successScoreForBounds(s.id, p.bounds);
-      line += "<td>"+cov.pct+"</td><td>"+(success===null?"":success)+"</td>"+
-        CATEGORIES.map(function(c){ var v=scores[c.id]; return "<td>"+(v===null?"":v)+"</td>"; }).join("");
+    CRITERES_XLS.forEach(function(cr){
+      orderedPeriods.forEach(function(p){
+        var v;
+        if(cr.id==="confiance"){ v = confidenceDetail(s, p.bounds).pct; }
+        else if(cr.id==="reussite"){ v = successScoreForBounds(s.id, p.bounds); }
+        else { v = dimensionScoresForBounds(s.id, p.bounds)[cr.id]; }
+        line += "<td>"+(v===null||v===undefined?"":v)+"</td>";
+      });
     });
     line += "<td>"+(prog===null?"":prog)+"</td><td>"+(aider?"Oui":"Non")+"</td></tr>";
     rows += line;
@@ -2266,11 +2282,13 @@ document.getElementById("btnExportMetavue").addEventListener("click", function()
   var students = activeStudents(exportClasse);
   var period = resolvePeriodByKey(state.metavuePeriodKey);
   var stamp = exportStampLine([period]);
-  var rows = "<tr><td colspan='"+(3+CATEGORIES.length)+"'>ClasseVue — Export MetaVue — "+stamp+"</td></tr>";
-  rows += "<tr><th>Classe</th><th>Nom</th><th>Prenom</th>"+CATEGORIES.map(function(c){return "<th>"+c.label+"</th>";}).join("")+"</tr>";
+  var rows = "<tr><td colspan='"+(5+CATEGORIES.length)+"'>EXPORT outil MetaVue — "+stamp+"</td></tr>";
+  rows += "<tr><th>Classe</th><th>Nom</th><th>Prenom</th><th>Confiance</th><th>Reussite</th>"+CATEGORIES.map(function(c){return "<th>"+c.label+"</th>";}).join("")+"</tr>";
   students.forEach(function(s){
+    var conf = confidenceDetail(s, period.bounds).pct;
+    var success = successScoreForBounds(s.id, period.bounds);
     var scores = dimensionScoresForBounds(s.id, period.bounds);
-    rows += "<tr><td>"+escapeHtml(s.classe)+"</td><td>"+escapeHtml(s.nom)+"</td><td>"+escapeHtml(s.prenom)+"</td>"+
+    rows += "<tr><td>"+escapeHtml(s.classe)+"</td><td>"+escapeHtml(s.nom)+"</td><td>"+escapeHtml(s.prenom)+"</td><td>"+conf+"</td><td>"+(success===null?"":success)+"</td>"+
       CATEGORIES.map(function(c){ var v=scores[c.id]; return "<td>"+(v===null?"":v)+"</td>"; }).join("")+"</tr>";
   });
   var html = "<html><head><meta charset='UTF-8'></head><body><table border='1'>"+rows+"</table></body></html>";
