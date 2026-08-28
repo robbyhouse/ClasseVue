@@ -678,7 +678,14 @@ function parseCsv(text){
   return lines.map(function(l){return parseCsvLine(l,delim);});
 }
 function download(filename, content, mime){
-  var blob=new Blob([content],{type:(mime||"text/csv")+";charset=utf-8"});
+  mime = mime || "text/csv";
+  // Excel (Windows et Mac) devine l'encodage d'un CSV sans indice fiable et se rabat souvent
+  // sur l'encodage régional du système, ce qui casse les accents. Le witness UTF-8 (BOM) au
+  // tout début du fichier lève cette ambiguïté de façon fiable, quel que soit le système.
+  if(mime.indexOf("csv")>-1 && content.charCodeAt(0)!==0xFEFF){
+    content = "\uFEFF" + content;
+  }
+  var blob=new Blob([content],{type:mime+";charset=utf-8"});
   var url=URL.createObjectURL(blob);
   var a=document.createElement("a"); a.href=url; a.download=filename;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
@@ -1105,7 +1112,7 @@ function dimensionScoresForBounds(studentId_, bounds){
     }).filter(function(v){return v!==null;});
     if(vals.length===0){ scores[c.id]=null; return; }
     var avg = vals.reduce(function(a,b){return a+b;},0)/vals.length;
-    scores[c.id] = Math.round(avg); // les faits portent déjà un pourcentage 0-100
+    scores[c.id] = avg; // valeur exacte ; l'arrondi ne se fait qu'à l'affichage/export
   });
   return scores;
 }
@@ -1437,7 +1444,7 @@ function renderObjectifsView(main){
       var val = obj[c.id] || "";
       html += '<td><select data-obj-student="'+s.id+'" data-obj-cat="'+c.id+'">'+
         '<option value=""'+(val===""?" selected":"")+'>—</option>'+
-        [100,75,50,25].map(function(v){ return '<option value="'+v+'"'+(String(val)===String(v)?" selected":"")+'>'+v+'%</option>'; }).join("")+
+        [100,75,50,25].map(function(v){ return '<option value="'+v+'"'+(String(val)===String(v)?" selected":"")+'>'+(v/25)+'</option>'; }).join("")+
         '</select></td>';
     });
     html += '</tr>';
@@ -2061,14 +2068,15 @@ document.getElementById("btnDownloadObjTemplate").addEventListener("click", func
   var classe = decodeURIComponent(document.getElementById("objClasseSelect").value || "");
   if(!classe){ setStatus("statusObjectifs","Aucune classe disponible.","err"); return; }
   var students = activeStudents(classe);
-  var header = ["classe","nom","prenom"].concat(CATEGORIES.map(function(c){return c.label+" (25/50/75/100)";}));
-  var lines = [header.map(escCsv).join(",")];
+  function escCsvSemi(v){ v=(v===undefined||v===null)?"":String(v); if(v.indexOf(";")>-1||v.indexOf('"')>-1||v.indexOf("\n")>-1){ return '"'+v.replace(/"/g,'""')+'"'; } return v; }
+  var header = ["classe","nom","prenom"].concat(CATEGORIES.map(function(c){return c.label+" (1/2/3/4)";}));
+  var lines = [header.map(escCsvSemi).join(";")];
   students.forEach(function(s){
     var obj = state.objectives[s.id] || {};
-    var row = [s.classe, s.nom, s.prenom].concat(CATEGORIES.map(function(c){ return obj[c.id]||""; }));
-    lines.push(row.map(escCsv).join(","));
+    var row = [s.classe, s.nom, s.prenom].concat(CATEGORIES.map(function(c){ return obj[c.id] ? String(obj[c.id]/25) : ""; }));
+    lines.push(row.map(escCsvSemi).join(";"));
   });
-  download("ClasseVueObjectifsModele"+sanitizeFilePart(classe)+"_"+fileStamp()+".csv", lines.join("\n"));
+  download("ClasseVueObjectif_"+sanitizeFilePart(classe)+"_vierge.csv", lines.join("\n"));
   setStatus("statusObjectifs","Modèle téléchargé pour "+classe+".","ok");
 });
 
@@ -2093,7 +2101,9 @@ document.getElementById("fileObjectifs").addEventListener("change", function(e){
           var raw = (r[3+idx]||"").trim();
           if(raw===""){ return; }
           var val = parseInt(raw,10);
-          if([25,50,75,100].indexOf(val)===-1){ return; }
+          // Nouveau format : niveaux 1/2/3/4. On accepte aussi 25/50/75/100 (anciens modèles déjà téléchargés).
+          if([1,2,3,4].indexOf(val)>-1){ val = val*25; }
+          else if([25,50,75,100].indexOf(val)===-1){ return; }
           if(!state.objectives[stud.id]) state.objectives[stud.id] = {};
           state.objectives[stud.id][c.id] = val;
           updatedValues++; touched = true;
@@ -2259,7 +2269,7 @@ function comparisonTableHtml(studentId_, periods){
     t += '<tr><td style="padding:4px 6px;font-weight:700;">'+escapeHtml(p.label)+'</td>'+
       CATEGORIES.map(function(c){
         var v = scores[c.id]; var col = colorForPct(v);
-        return '<td style="text-align:center;padding:4px 4px;background:'+col.bg+';color:'+col.fg+';font-weight:700;">'+(v===null?"—":v+"%")+'</td>';
+        return '<td style="text-align:center;padding:4px 4px;background:'+col.bg+';color:'+col.fg+';font-weight:700;">'+(v===null?"—":Math.round(v)+"%")+'</td>';
       }).join("")+'</tr>';
   });
   t += '</tbody></table>';
@@ -2354,7 +2364,7 @@ document.getElementById("btnExportXls").addEventListener("click", function(){
         if(cr.id==="confiance"){ v = confidenceDetail(s, p.bounds).pct; }
         else if(cr.id==="reussite"){ v = successScoreForBounds(s.id, p.bounds); }
         else { v = dimensionScoresForBounds(s.id, p.bounds)[cr.id]; }
-        line += "<td>"+(v===null||v===undefined?"":v)+"</td>";
+        line += "<td>"+(v===null||v===undefined?"":Math.round(v))+"</td>";
       });
     });
     line += "<td>"+(prog===null?"":prog)+"</td><td>"+(aider?"Oui":"Non")+"</td></tr>";
@@ -2388,7 +2398,7 @@ document.getElementById("btnExportMetavue").addEventListener("click", function()
     var success = successScoreForBounds(s.id, period.bounds);
     var scores = dimensionScoresForBounds(s.id, period.bounds);
     rows += "<tr><td>"+escapeHtml(s.classe)+"</td><td>"+escapeHtml(s.nom)+"</td><td>"+escapeHtml(s.prenom)+"</td><td>"+conf+"</td><td>"+(success===null?"":success)+"</td>"+
-      CATEGORIES.map(function(c){ var v=scores[c.id]; return "<td>"+(v===null?"":v)+"</td>"; }).join("")+"</tr>";
+      CATEGORIES.map(function(c){ var v=scores[c.id]; return "<td>"+(v===null?"":Math.round(v))+"</td>"; }).join("")+"</tr>";
   });
   var html = "<html><head><meta charset='UTF-8'></head><body><table border='1'>"+rows+"</table></body></html>";
   download("ClasseVueMetaVue"+sanitizeFilePart(exportClasse)+"_"+sanitizeFilePart(period.label)+"_"+fileStamp()+".xls", html, "application/vnd.ms-excel");
