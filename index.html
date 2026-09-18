@@ -390,8 +390,8 @@
     <div class="drawer-demo-zone">
       <button class="drawer-group-title" data-group="demo">Données de démonstration <span class="chevron">▸</span></button>
       <div class="drawer-group-content" id="group-demo">
-      <p class="hint" style="font-size:12.5px;color:var(--ink-soft);margin:4px 0 10px 0;line-height:1.4;">Charge un jeu de données fictif pour découvrir l'outil ou faire une démonstration. Choisis le scénario qui correspond à ce que tu veux montrer.</p>
-      <select id="demoDatasetSelect" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:13.5px;margin-bottom:8px;">
+      <p class="hint" style="font-size:12.5px;color:var(--ink-soft);margin:4px 0 10px 0;line-height:1.4;">Tu veux tester l'outil ? Sélectionne un jeu de données dans la liste déroulante et charge le.</p>
+      <select id="demoDatasetSelect" style="width:100%;border:1px solid #2B5C8A;border-radius:10px;padding:9px 10px;font-size:13.5px;margin-bottom:8px;background:#FFFFFF;color:var(--ink);-webkit-appearance:menulist;appearance:menulist;cursor:pointer;">
         <option value="ClasseVueDemo_402_UneClasseComplete.csv">Une classe complète (402) — 30 élèves, tous profils</option>
         <option value="ClasseVueDemo_301-401_PetitesClasses.csv">Petites classes (301/401) — 2 classes de 8 élèves</option>
         <option value="ClasseVueDemo_302_GrandeClasse.csv">Grande classe (302) — 30 élèves, rythme hebdomadaire</option>
@@ -1949,6 +1949,8 @@ function periodKeyOptionsHtml(selectedKey, includeCustom){
   return opts;
 }
 function openDrawer(){
+  document.querySelectorAll(".drawer-group-content.open").forEach(function(el){ el.classList.remove("open"); });
+  document.querySelectorAll(".drawer-group-title.open").forEach(function(el){ el.classList.remove("open"); });
   renderAnneeSummary();
   renderBackupBanner();
   document.getElementById("progressionWindowSelect").value = String(state.progressionWindow||3);
