@@ -192,6 +192,9 @@
   .drawer-danger-zone{background:#FBEEEC;border:1px solid #F0C9C4;border-radius:12px;padding:14px;margin-top:18px;}
   .drawer-danger-zone .drawer-group-title{color:var(--neg);border-bottom-color:var(--neg);margin-top:0;}
   .drawer-danger-zone .drawer-group-content{padding-top:12px;}
+  .drawer-demo-zone{background:#EAF1F7;border:1px solid #C7DCEC;border-radius:12px;padding:14px;margin-top:18px;}
+  .drawer-demo-zone .drawer-group-title{color:#2B5C8A;border-bottom-color:#2B5C8A;margin-top:0;}
+  .drawer-demo-zone .drawer-group-content{padding-top:12px;}
   .section-title-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
   .section-title-row h3{margin:0;}
   .info-btn{width:20px;height:20px;border-radius:50%;border:1px solid var(--line);background:var(--paper-raised);color:var(--ink-soft);font-size:11px;font-weight:700;font-style:italic;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
@@ -382,6 +385,21 @@
       <button class="btn" id="btnExportMetavue">Exporter (XLS)</button>
     </div>
 
+    </div>
+
+    <div class="drawer-demo-zone">
+      <button class="drawer-group-title" data-group="demo">Données de démonstration <span class="chevron">▸</span></button>
+      <div class="drawer-group-content" id="group-demo">
+      <p class="hint" style="font-size:12.5px;color:var(--ink-soft);margin:4px 0 10px 0;line-height:1.4;">Charge un jeu de données fictif pour découvrir l'outil ou faire une démonstration. Choisis le scénario qui correspond à ce que tu veux montrer.</p>
+      <select id="demoDatasetSelect" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:13.5px;margin-bottom:8px;">
+        <option value="ClasseVueDemo_402_UneClasseComplete.csv">Une classe complète (402) — 30 élèves, tous profils</option>
+        <option value="ClasseVueDemo_301-401_PetitesClasses.csv">Petites classes (301/401) — 2 classes de 8 élèves</option>
+        <option value="ClasseVueDemo_302_GrandeClasse.csv">Grande classe (302) — 30 élèves, rythme hebdomadaire</option>
+        <option value="ClasseVueDemo_501-502-503_MultiClasses_2eSemestre.csv">Multi-classes, 2e semestre (501/502/503) — petits effectifs, beaucoup de séances</option>
+      </select>
+      <button class="btn" id="btnLoadDemo" style="border-color:#2B5C8A;color:#2B5C8A;">Charger ce jeu de données</button>
+      <div class="status" id="statusDemo"></div>
+      </div>
     </div>
 
     <div class="drawer-danger-zone">
@@ -2156,6 +2174,88 @@ document.getElementById("btnExportFull").addEventListener("click", function(){
   setStatus("statusFull","Sauvegarde complète exportée.","ok");
 });
 
+function restoreFromCsvText(text, statusElId){
+  try{
+    var rows = parseCsv(text);
+    var headerCell = rows[0] && rows[0][0] ? rows[0][0].trim().toLowerCase() : "";
+    var start = (headerCell==="type") ? 1 : 0;
+    var newStudents=[], newObs=[];
+    var newAnnee=null, newPeriodMode=null, newPeriodDates=null;
+    var newSessionLog=[], absenceRaw=[], objectifRaw=[];
+    var lookup = {}; // normalized "classe|nom|prenom" -> student
+    function normKey(classe,nom,prenom){ return slugify(classe)+"|"+slugify(nom)+"|"+slugify(prenom); }
+    var countEleve=0, countObs=0, countObsMatched=0;
+    for(var i=start;i<rows.length;i++){
+      var r=rows[i]; if(!r[0]) continue;
+      if(r[0]==="META"){
+        newAnnee = r[1]||null;
+        newPeriodMode = (r[2]==="trimestre") ? "trimestre" : "semestre";
+        newPeriodDates = {p1Start:r[3]||"", p1End:r[4]||"", p2Start:r[5]||"", p2End:r[6]||"", p3Start:r[7]||"", p3End:r[8]||""};
+      } else if(r[0]==="SESSION"){
+        newSessionLog.push({id:r[2]||uid(), classe:r[1]||"", startedAt:parseInt(r[3],10)||Date.now(), endedAt: r[4]?parseInt(r[4],10):null});
+      } else if(r[0]==="ABSENCE"){
+        absenceRaw.push({classe:r[1]||"", sessionId:r[2]||"", nom:r[3]||"", prenom:r[4]||""});
+      } else if(r[0]==="OBJECTIF"){
+        objectifRaw.push({classe:r[1]||"", nom:r[2]||"", prenom:r[3]||"", raw:r.slice(4)});
+      } else if(r[0]==="ELEVE"){
+        var classe=r[1]||"", nom=r[2]||"", prenom=r[3]||"", naissance=r[4]||"", sexe=r[5]||"", statut=r[6]||"actif";
+        var stud = {id:studentId(classe,nom,prenom,naissance), classe:classe, nom:nom, prenom:prenom, naissance:naissance, sexe:sexe, status:statut};
+        newStudents.push(stud);
+        lookup[normKey(classe,nom,prenom)] = stud;
+        countEleve++;
+      } else if(r[0]==="OBS"){
+        countObs++;
+        var oClasse=r[1]||"", oNom=r[2]||"", oPrenom=r[3]||"", oDate=r[7]||"", oHeure=r[8]||"00:00", oCat=r[9]||"", oFait=r[10]||"";
+        var match = lookup[normKey(oClasse,oNom,oPrenom)];
+        var oid;
+        if(match){ oid = match.id; countObsMatched++; }
+        else {
+          oid = studentId(oClasse,oNom,oPrenom);
+          var ghost = {id:oid, classe:oClasse, nom:oNom, prenom:oPrenom, naissance:"", sexe:"", status:"actif"};
+          newStudents.push(ghost);
+          lookup[normKey(oClasse,oNom,oPrenom)] = ghost;
+        }
+        var ms = new Date(oDate+"T"+oHeure+":00").getTime() || Date.now();
+        newObs.push({id:uid(), studentId:oid, classe:oClasse, categorie:oCat, fait:oFait, dateISO:oDate, timeHM:oHeure, ms:ms});
+      }
+    }
+    var newAbsences = [];
+    absenceRaw.forEach(function(a){
+      var match = lookup[normKey(a.classe,a.nom,a.prenom)];
+      if(match){ newAbsences.push({studentId:match.id, sessionId:a.sessionId}); }
+    });
+    var newObjectives = {};
+    objectifRaw.forEach(function(o){
+      var match = lookup[normKey(o.classe,o.nom,o.prenom)];
+      if(!match) return;
+      var entry = {};
+      CATEGORIES.forEach(function(c, idx){
+        var v = o.raw[idx];
+        if(v){ entry[c.id] = parseInt(v,10); }
+      });
+      newObjectives[match.id] = entry;
+    });
+    if(countEleve===0 && countObs===0){
+      setStatus(statusElId,"Ce fichier ne contient aucune donnée reconnue (vérifie qu'il s'agit bien d'un export ClasseVue).","err");
+      return false;
+    }
+    state.students = newStudents;
+    state.observations = newObs;
+    state.objectives = newObjectives;
+    state.sessionLog = newSessionLog;
+    state.absences = newAbsences;
+    if(newAnnee) state.anneeScolaire = newAnnee;
+    if(newPeriodMode) state.periodMode = newPeriodMode;
+    if(newPeriodDates) state.periodDates = newPeriodDates;
+    state.currentClasse = classesList()[0] || null;
+    persist();
+    renderBackupBanner();
+    renderAnneeSummary();
+    setStatus(statusElId, "Chargement effectué : "+countEleve+" élève(s) lu(s), "+countObs+" observation(s) lue(s) ("+countObsMatched+" rattachées directement).", "ok");
+    render();
+    return true;
+  }catch(err){ setStatus(statusElId,"Erreur de lecture du fichier.","err"); return false; }
+}
 document.getElementById("btnImportFull").addEventListener("click", function(){ document.getElementById("fileFull").click(); });
 document.getElementById("fileFull").addEventListener("change", function(e){
   var file=e.target.files[0]; if(!file) return;
@@ -2163,88 +2263,25 @@ document.getElementById("fileFull").addEventListener("change", function(e){
     e.target.value=""; return;
   }
   var reader=new FileReader();
-  reader.onload=function(evt){
-    try{
-      var rows = parseCsv(evt.target.result);
-      var headerCell = rows[0] && rows[0][0] ? rows[0][0].trim().toLowerCase() : "";
-      var start = (headerCell==="type") ? 1 : 0;
-      var newStudents=[], newObs=[];
-      var newAnnee=null, newPeriodMode=null, newPeriodDates=null;
-      var newSessionLog=[], absenceRaw=[], objectifRaw=[];
-      var lookup = {}; // normalized "classe|nom|prenom" -> student
-      function normKey(classe,nom,prenom){ return slugify(classe)+"|"+slugify(nom)+"|"+slugify(prenom); }
-      var countEleve=0, countObs=0, countObsMatched=0;
-      for(var i=start;i<rows.length;i++){
-        var r=rows[i]; if(!r[0]) continue;
-        if(r[0]==="META"){
-          newAnnee = r[1]||null;
-          newPeriodMode = (r[2]==="trimestre") ? "trimestre" : "semestre";
-          newPeriodDates = {p1Start:r[3]||"", p1End:r[4]||"", p2Start:r[5]||"", p2End:r[6]||"", p3Start:r[7]||"", p3End:r[8]||""};
-        } else if(r[0]==="SESSION"){
-          newSessionLog.push({id:r[2]||uid(), classe:r[1]||"", startedAt:parseInt(r[3],10)||Date.now(), endedAt: r[4]?parseInt(r[4],10):null});
-        } else if(r[0]==="ABSENCE"){
-          absenceRaw.push({classe:r[1]||"", sessionId:r[2]||"", nom:r[3]||"", prenom:r[4]||""});
-        } else if(r[0]==="OBJECTIF"){
-          objectifRaw.push({classe:r[1]||"", nom:r[2]||"", prenom:r[3]||"", raw:r.slice(4)});
-        } else if(r[0]==="ELEVE"){
-          var classe=r[1]||"", nom=r[2]||"", prenom=r[3]||"", naissance=r[4]||"", sexe=r[5]||"", statut=r[6]||"actif";
-          var stud = {id:studentId(classe,nom,prenom,naissance), classe:classe, nom:nom, prenom:prenom, naissance:naissance, sexe:sexe, status:statut};
-          newStudents.push(stud);
-          lookup[normKey(classe,nom,prenom)] = stud;
-          countEleve++;
-        } else if(r[0]==="OBS"){
-          countObs++;
-          var oClasse=r[1]||"", oNom=r[2]||"", oPrenom=r[3]||"", oDate=r[7]||"", oHeure=r[8]||"00:00", oCat=r[9]||"", oFait=r[10]||"";
-          var match = lookup[normKey(oClasse,oNom,oPrenom)];
-          var oid;
-          if(match){ oid = match.id; countObsMatched++; }
-          else {
-            oid = studentId(oClasse,oNom,oPrenom);
-            var ghost = {id:oid, classe:oClasse, nom:oNom, prenom:oPrenom, naissance:"", sexe:"", status:"actif"};
-            newStudents.push(ghost);
-            lookup[normKey(oClasse,oNom,oPrenom)] = ghost;
-          }
-          var ms = new Date(oDate+"T"+oHeure+":00").getTime() || Date.now();
-          newObs.push({id:uid(), studentId:oid, classe:oClasse, categorie:oCat, fait:oFait, dateISO:oDate, timeHM:oHeure, ms:ms});
-        }
-      }
-      var newAbsences = [];
-      absenceRaw.forEach(function(a){
-        var match = lookup[normKey(a.classe,a.nom,a.prenom)];
-        if(match){ newAbsences.push({studentId:match.id, sessionId:a.sessionId}); }
-      });
-      var newObjectives = {};
-      objectifRaw.forEach(function(o){
-        var match = lookup[normKey(o.classe,o.nom,o.prenom)];
-        if(!match) return;
-        var entry = {};
-        CATEGORIES.forEach(function(c, idx){
-          var v = o.raw[idx];
-          if(v){ entry[c.id] = parseInt(v,10); }
-        });
-        newObjectives[match.id] = entry;
-      });
-      if(countEleve===0 && countObs===0){
-        setStatus("statusFull","Ce fichier ne contient aucune donnée reconnue (vérifie qu'il s'agit bien d'un export ClasseVue).","err");
-        e.target.value=""; return;
-      }
-      state.students = newStudents;
-      state.observations = newObs;
-      state.objectives = newObjectives;
-      state.sessionLog = newSessionLog;
-      state.absences = newAbsences;
-      if(newAnnee) state.anneeScolaire = newAnnee;
-      if(newPeriodMode) state.periodMode = newPeriodMode;
-      if(newPeriodDates) state.periodDates = newPeriodDates;
-      state.currentClasse = classesList()[0] || null;
-      persist();
-      renderBackupBanner();
-      renderAnneeSummary();
-      setStatus("statusFull", "Restauration effectuée : "+countEleve+" élève(s) lu(s), "+countObs+" observation(s) lue(s) ("+countObsMatched+" rattachées directement).", "ok");
-      render();
-    }catch(err){ setStatus("statusFull","Erreur de lecture du fichier.","err"); }
-  };
+  reader.onload=function(evt){ restoreFromCsvText(evt.target.result, "statusFull"); };
   reader.readAsText(file,"UTF-8"); e.target.value="";
+});
+
+document.getElementById("btnLoadDemo").addEventListener("click", function(){
+  var sel = document.getElementById("demoDatasetSelect");
+  var filename = sel.value;
+  var label = sel.options[sel.selectedIndex].text;
+  if(!window.confirm("Cette opération va REMPLACER toutes les données actuelles (toutes classes, toutes observations) par le jeu de démonstration \""+label+"\". Cette action est irréversible. Continuer ?")){
+    return;
+  }
+  setStatus("statusDemo","Chargement en cours…","");
+  fetch("demo/"+filename)
+    .then(function(resp){
+      if(!resp.ok) throw new Error("HTTP "+resp.status);
+      return resp.text();
+    })
+    .then(function(text){ restoreFromCsvText(text, "statusDemo"); })
+    .catch(function(err){ setStatus("statusDemo","Impossible de charger ce jeu de données (fichier non trouvé sur le serveur).","err"); });
 });
 
 document.getElementById("btnReset").addEventListener("click", function(){
