@@ -1313,7 +1313,21 @@ function renderMain(){
   else renderReussiteView(main);
 }
 function renderClasseView(main){
-  var students = activeStudents(state.currentClasse);
+  var students = activeStudents(state.currentClasse).slice().sort(function(a,b){
+    return (a.prenom+a.nom).localeCompare(b.prenom+b.nom, "fr", {sensitivity:"base"});
+  });
+  var displayNames = {};
+  (function(){
+    var byFirstName = {};
+    students.forEach(function(s){
+      var key = slugify(s.prenom);
+      (byFirstName[key] = byFirstName[key] || []).push(s);
+    });
+    students.forEach(function(s){
+      var group = byFirstName[slugify(s.prenom)];
+      displayNames[s.id] = (group.length > 1) ? (s.prenom + " " + (s.nom.charAt(0)||"").toUpperCase() + ".") : s.prenom;
+    });
+  })();
   var html = '';
   if(students.length===0){
     html = '<div class="empty"><h3>Classe vide</h3><p>Aucun élève actif dans cette classe.</p></div>';
@@ -1342,7 +1356,7 @@ function renderClasseView(main){
     html += '<button class="profile-btn" data-profile="'+s.id+'" title="Voir le profil">📊</button>';
     if(sess){ html += '<button class="absent-btn'+(absent?" is-absent":"")+'" data-absent="'+s.id+'" title="Marquer absent(e) pour cette session">'+(absent?"✕":"○")+'</button>'; }
     html += '<div class="ring-wrap">'+ringSVG(sessCov.pct)+'<div class="ring-pct">'+conf+'%</div></div>';
-    html += '<div class="name">'+escapeHtml(s.prenom)+'</div>';
+    html += '<div class="name">'+escapeHtml(displayNames[s.id])+'</div>';
     html += '</div>';
   });
   html += '</div>';
