@@ -265,7 +265,7 @@
 </div>
 
 <div class="drawer" id="drawer">
-  <div class="drawer-head"><h2>Réglages &amp; données</h2><button class="drawer-close" id="btnCloseDrawer">✕</button></div>
+  <div class="drawer-head"><div><h2 style="margin:0;">Réglages &amp; données</h2><div id="appVersion" style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;"></div></div><button class="drawer-close" id="btnCloseDrawer">✕</button></div>
   <div class="drawer-body">
 
     <div class="lastbackup-banner" id="lastBackupBanner"></div>
@@ -590,6 +590,7 @@ var state = {
 };
 
 /* ---------------- Persistance locale automatique (IndexedDB) ---------------- */
+var APP_VERSION="2026.10.14";
 var DB_NAME="classevue_db", DB_VERSION=1, STORE="kv";
 var dbPromise=null;
 function getDB(){
@@ -2059,6 +2060,7 @@ function openDrawer(){
 }
 function closeDrawerFn(){ document.getElementById("drawer").classList.remove("open"); document.getElementById("overlay").classList.remove("open"); }
 document.getElementById("btnDrawer").addEventListener("click", openDrawer);
+(function(){ var v=document.getElementById("appVersion"); if(v) v.textContent="Version "+APP_VERSION; })();
 document.getElementById("progressionWindowSelect").addEventListener("change", function(){
   state.progressionWindow = parseInt(this.value,10)||3;
   persist();
