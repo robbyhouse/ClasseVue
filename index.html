@@ -366,11 +366,26 @@
         <option value="multi">Toutes les périodes côte à côte (évolution)</option>
       </select>
       <select id="exportPeriodKeySelect" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:13.5px;margin-bottom:6px;"></select>
-      <button type="button" id="exportCustomToggle" style="background:none;border:none;color:var(--accent);font-size:12px;font-weight:700;cursor:pointer;padding:2px 0;margin-bottom:8px;">Dates personnalisées ▸</button>
-      <div id="exportCustomDates" style="display:none;margin-bottom:8px;">
-        <div class="mini-date-row">
-          <div><label class="mini-label">Début</label><input type="date" id="exportCustomStartInput" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;"></div>
-          <div><label class="mini-label">Fin</label><input type="date" id="exportCustomEndInput" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;"></div>
+      <button type="button" id="exportCustomToggle" style="background:none;border:none;color:var(--accent);font-size:12px;font-weight:700;cursor:pointer;padding:2px 0;margin-bottom:8px;">Options d'impression ▸</button>
+      <div id="exportPrintOptions" style="display:none;margin-bottom:10px;">
+        <label class="mini-label">Nom du professeur</label>
+        <input type="text" id="printTeacherInput" placeholder="Ex. M. Dupont" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;">
+        <div id="printObsStartRow" style="margin-top:8px;">
+          <label class="mini-label">Début d'observation (facultatif)</label>
+          <input type="date" id="printObsStartInput" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;">
+          <p class="hint" style="font-size:11.5px;margin:4px 0 0 0;">Si vide, la période choisie ci-dessus est indiquée.</p>
+        </div>
+        <div style="margin-top:8px;">
+          <label class="mini-label">Nombre de semaines observées (facultatif)</label>
+          <input type="number" id="printObsWeeksInput" min="1" max="60" step="1" inputmode="numeric" placeholder="Ex. 8" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;">
+        </div>
+        <label class="modal-check" style="margin-top:10px;"><input type="checkbox" id="printShowConfianceCheck" checked> Afficher la confiance</label>
+        <div id="exportCustomDates" style="display:none;margin-top:8px;">
+          <label class="mini-label">Dates personnalisées (période « Dates personnalisées »)</label>
+          <div class="mini-date-row">
+            <div><label class="mini-label">Début</label><input type="date" id="exportCustomStartInput" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;"></div>
+            <div><label class="mini-label">Fin</label><input type="date" id="exportCustomEndInput" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;"></div>
+          </div>
         </div>
       </div>
 
@@ -444,7 +459,6 @@
   <div class="modal-box">
     <h3>Profils de la classe — que veux-tu inclure ?</h3>
     <label class="modal-check"><input type="checkbox" id="printOptRadar" checked> Radar des 5 dimensions</label>
-    <label class="modal-check"><input type="checkbox" id="printOptStats" checked> Confiance et statistiques</label>
     <label class="modal-check"><input type="checkbox" id="printOptFacts" checked> Liste des faits observés (historique détaillé)</label>
     <div class="modal-actions">
       <button class="btn" id="printModalCancel">Annuler</button>
@@ -581,6 +595,7 @@ var state = {
   exportPeriodMode: "single", // "single" | "multi" — pour Profils PDF et Comparaison XLS
   exportPeriodKey: "annee",
   exportCustomStart: "", exportCustomEnd: "",
+  printTeacher: "", printObsStart: "", printObsWeeks: "", printShowConfiance: true, // options d'impression des exports PDF
   metavuePeriodKey: "annee", // toujours une seule période, jamais "multi"
   reussiteDisplayMode: "pct", // "pct" | "niveau" — affichage des 5 critères de réussite uniquement
   lastFullBackupMs: null,
@@ -590,7 +605,7 @@ var state = {
 };
 
 /* ---------------- Persistance locale automatique (IndexedDB) ---------------- */
-var APP_VERSION="2026.10.14";
+var APP_VERSION="2026.11.04";
 var DB_NAME="classevue_db", DB_VERSION=1, STORE="kv";
 var dbPromise=null;
 function getDB(){
@@ -632,7 +647,7 @@ function persist(){
       kvSet("students", JSON.stringify(state.students)),
       kvSet("observations", JSON.stringify(state.observations)),
       kvSet("objectives", JSON.stringify(state.objectives)),
-      kvSet("meta", JSON.stringify({currentClasse:state.currentClasse, anneeScolaire:state.anneeScolaire, periodMode:state.periodMode, periodDates:state.periodDates, sessionLog:state.sessionLog, absences:state.absences, lastFullBackupMs:state.lastFullBackupMs, progressionWindow:state.progressionWindow, radarAxes:state.radarAxes, tabsConfig:state.tabsConfig, exportPeriodMode:state.exportPeriodMode, exportPeriodKey:state.exportPeriodKey, exportCustomStart:state.exportCustomStart, exportCustomEnd:state.exportCustomEnd, metavuePeriodKey:state.metavuePeriodKey, reussiteDisplayMode:state.reussiteDisplayMode}))
+      kvSet("meta", JSON.stringify({currentClasse:state.currentClasse, anneeScolaire:state.anneeScolaire, periodMode:state.periodMode, periodDates:state.periodDates, sessionLog:state.sessionLog, absences:state.absences, lastFullBackupMs:state.lastFullBackupMs, progressionWindow:state.progressionWindow, radarAxes:state.radarAxes, tabsConfig:state.tabsConfig, exportPeriodMode:state.exportPeriodMode, exportPeriodKey:state.exportPeriodKey, exportCustomStart:state.exportCustomStart, exportCustomEnd:state.exportCustomEnd, metavuePeriodKey:state.metavuePeriodKey, reussiteDisplayMode:state.reussiteDisplayMode, printTeacher:state.printTeacher, printObsStart:state.printObsStart, printObsWeeks:state.printObsWeeks, printShowConfiance:state.printShowConfiance}))
     ]).then(function(){ setAutosaveStatus("Sauvegardé automatiquement sur cet appareil.", "ok"); })
       .catch(function(){ setAutosaveStatus("Sauvegarde automatique indisponible ici — pense à exporter en CSV.", "err"); });
   }, 300);
@@ -659,6 +674,10 @@ function loadPersisted(){
       if(m && m.exportCustomEnd) state.exportCustomEnd=m.exportCustomEnd;
       if(m && m.metavuePeriodKey) state.metavuePeriodKey=m.metavuePeriodKey;
       if(m && m.reussiteDisplayMode) state.reussiteDisplayMode=m.reussiteDisplayMode;
+      if(m && typeof m.printTeacher==="string") state.printTeacher=m.printTeacher;
+      if(m && typeof m.printObsStart==="string") state.printObsStart=m.printObsStart;
+      if(m && (typeof m.printObsWeeks==="string"||typeof m.printObsWeeks==="number")) state.printObsWeeks=String(m.printObsWeeks);
+      if(m && typeof m.printShowConfiance==="boolean") state.printShowConfiance=m.printShowConfiance;
     }
     if(res[3]) state.objectives = JSON.parse(res[3]);
     if(!state.anneeScolaire) state.anneeScolaire = defaultAnneeScolaire();
@@ -826,6 +845,42 @@ function exportStampLine(periodsList){
     return "Export généré le "+fileDateStamp()+" — Période : "+periodsList[0].label;
   }
   return "Export généré le "+fileDateStamp()+" — Périodes comparées : "+periodsList.map(function(p){return p.label;}).join(", ");
+}
+
+function fmtDateFR(iso){
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso||"");
+  return m ? (m[3]+"/"+m[2]+"/"+m[1]) : "";
+}
+function printWeeksCount(){
+  var n = parseInt(state.printObsWeeks,10);
+  return (n>0) ? n : 0;
+}
+function printWeeksText(){
+  var n = printWeeksCount();
+  return n ? (n+" semaine"+(n>1?"s":"")+" observée"+(n>1?"s":"")) : "";
+}
+// Éléments facultatifs d'en-tête des exports PDF : professeur, début d'observation, semaines observées
+function printExtraParts(isMulti){
+  var parts = [];
+  var t = (state.printTeacher||"").trim();
+  if(t) parts.push("Professeur : "+t);
+  if(!isMulti && state.printObsStart) parts.push("Observations depuis le "+fmtDateFR(state.printObsStart));
+  var w = printWeeksText();
+  if(w) parts.push(w);
+  return parts;
+}
+// Ligne d'en-tête d'un export PDF : si le début d'observation est renseigné, il remplace l'affichage de la période
+function printStampLine(periodsList){
+  var isMulti = periodsList.length>1;
+  var parts = ["Export généré le "+fileDateStamp()];
+  var t = (state.printTeacher||"").trim();
+  if(t) parts.push("Professeur : "+t);
+  if(!isMulti && state.printObsStart){ parts.push("Observations depuis le "+fmtDateFR(state.printObsStart)); }
+  else if(isMulti){ parts.push("Périodes comparées : "+periodsList.map(function(p){return p.label;}).join(", ")); }
+  else { parts.push("Période : "+periodsList[0].label); }
+  var w = printWeeksText();
+  if(w) parts.push(w);
+  return parts.join(" — ");
 }
 
 /* ---------------- Sessions (historique par classe, indépendant du choix de classe dans le menu) ---------------- */
@@ -1568,8 +1623,8 @@ function printReussitePdf(periods, classe){
   var students = activeStudents(classe);
   var isMulti = periods.length>1;
   var orderedPeriods = isMulti ? [resolvePeriodByKey("annee")].concat(periods.filter(function(p){return p.key!=="annee";})) : periods;
-  var groups = reussiteExportGroups();
-  var stamp = exportStampLine(periods);
+  var groups = reussiteExportGroups().filter(function(g){ return state.printShowConfiance || !g.isConfiance; });
+  var stamp = printStampLine(periods);
   var fontSize = isMulti ? (orderedPeriods.length>=3 ? "7px" : "8px") : "10.5px";
   var html = '<div style="font-family:-apple-system,Arial,sans-serif;">';
   html += '<h1 style="font-size:18px;margin:0 0 2px 0;">Critères favorisant la réussite — '+escapeHtml(classe)+'</h1>';
@@ -2052,8 +2107,13 @@ function openDrawer(){
   document.getElementById("exportPeriodModeSelect").value = state.exportPeriodMode;
   document.getElementById("exportPeriodKeySelect").innerHTML = periodKeyOptionsHtml(state.exportPeriodKey);
   updateExportPeriodUIVisibility();
+  setPrintOptionsOpen(state.exportPeriodKey==="custom" && state.exportPeriodMode!=="multi");
   document.getElementById("exportCustomStartInput").value = state.exportCustomStart;
   document.getElementById("exportCustomEndInput").value = state.exportCustomEnd;
+  document.getElementById("printTeacherInput").value = state.printTeacher;
+  document.getElementById("printObsStartInput").value = state.printObsStart;
+  document.getElementById("printObsWeeksInput").value = state.printObsWeeks;
+  document.getElementById("printShowConfianceCheck").checked = state.printShowConfiance;
   document.getElementById("metavuePeriodSelect").innerHTML = periodKeyOptionsHtml(state.metavuePeriodKey, false);
 
   document.getElementById("drawer").classList.add("open"); document.getElementById("overlay").classList.add("open");
@@ -2069,11 +2129,19 @@ document.getElementById("reussiteDisplayModeSelect").addEventListener("change", 
   state.reussiteDisplayMode = this.value;
   persist();
 });
+function updateExportCustomBlock(){
+  var multi = state.exportPeriodMode==="multi";
+  document.getElementById("exportCustomDates").style.display = (!multi && state.exportPeriodKey==="custom") ? "block" : "none";
+  document.getElementById("printObsStartRow").style.display = multi ? "none" : "block";
+}
+function setPrintOptionsOpen(open){
+  document.getElementById("exportPrintOptions").style.display = open ? "block" : "none";
+  document.getElementById("exportCustomToggle").textContent = "Options d'impression "+(open?"▾":"▸");
+}
 function updateExportPeriodUIVisibility(){
   var multi = state.exportPeriodMode==="multi";
   document.getElementById("exportPeriodKeySelect").style.display = multi ? "none" : "block";
-  document.getElementById("exportCustomToggle").style.display = multi ? "none" : "block";
-  if(multi) document.getElementById("exportCustomDates").style.display = "none";
+  updateExportCustomBlock();
 }
 document.getElementById("exportPeriodModeSelect").addEventListener("change", function(){
   state.exportPeriodMode = this.value;
@@ -2082,15 +2150,17 @@ document.getElementById("exportPeriodModeSelect").addEventListener("change", fun
 });
 document.getElementById("exportPeriodKeySelect").addEventListener("change", function(){
   state.exportPeriodKey = this.value;
-  document.getElementById("exportCustomDates").style.display = (this.value==="custom") ? "block" : "none";
+  if(this.value==="custom") setPrintOptionsOpen(true);
+  updateExportCustomBlock();
   persist();
 });
 document.getElementById("exportCustomToggle").addEventListener("click", function(){
-  var el = document.getElementById("exportCustomDates");
-  var willShow = el.style.display==="none";
-  el.style.display = willShow ? "block" : "none";
-  this.textContent = "Dates personnalisées "+(willShow?"▾":"▸");
+  setPrintOptionsOpen(document.getElementById("exportPrintOptions").style.display==="none");
 });
+document.getElementById("printTeacherInput").addEventListener("input", function(){ state.printTeacher=this.value; persist(); });
+document.getElementById("printObsStartInput").addEventListener("change", function(){ state.printObsStart=this.value; persist(); });
+document.getElementById("printObsWeeksInput").addEventListener("input", function(){ state.printObsWeeks=this.value; persist(); });
+document.getElementById("printShowConfianceCheck").addEventListener("change", function(){ state.printShowConfiance=this.checked; persist(); });
 document.getElementById("exportCustomStartInput").addEventListener("change", function(){ state.exportCustomStart=this.value; persist(); });
 document.getElementById("exportCustomEndInput").addEventListener("change", function(){ state.exportCustomEnd=this.value; persist(); });
 document.getElementById("metavuePeriodSelect").addEventListener("change", function(){ state.metavuePeriodKey=this.value; persist(); });
@@ -2408,7 +2478,7 @@ function comparisonTableHtml(studentId_, periods){
 }
 document.getElementById("printModalGo").addEventListener("click", function(){
   var withRadar = document.getElementById("printOptRadar").checked;
-  var withStats = document.getElementById("printOptStats").checked;
+  var withStats = state.printShowConfiance; // réglé dans « Options d'impression »
   var withFacts = document.getElementById("printOptFacts").checked;
   var exportClasse = decodeURIComponent(document.getElementById("exportClasseSelect").value || "");
   printModal.classList.remove("open");
@@ -2417,7 +2487,8 @@ document.getElementById("printModalGo").addEventListener("click", function(){
   var isMulti = periods.length>1;
   var mainPeriod = isMulti ? periods[periods.length-2] : periods[0];
   var yearBounds = resolvePeriodByKey("annee").bounds;
-  var stamp = exportStampLine(periods);
+  var stamp = printStampLine(periods);
+  var extraParts = printExtraParts(isMulti);
   var html = '<div style="font-size:11px;color:#777;text-align:right;margin-bottom:6px;">'+escapeHtml(stamp)+'</div>';
   students.forEach(function(s){
     var conf = confidenceDetail(s, mainPeriod.bounds);
@@ -2427,7 +2498,7 @@ document.getElementById("printModalGo").addEventListener("click", function(){
     var objectives = state.objectives[s.id] || null;
     html += '<div class="print-student">';
     html += '<h1 style="font-size:20px;margin-bottom:2px;">'+escapeHtml(s.prenom)+' '+escapeHtml(s.nom.toUpperCase())+'</h1>';
-    html += '<div style="color:#555;font-size:13px;margin-bottom:14px;">'+escapeHtml(s.classe)+'</div>';
+    html += '<div style="color:#555;font-size:13px;margin-bottom:14px;">'+escapeHtml([s.classe].concat(extraParts).join(" · "))+'</div>';
     if(withStats){
       html += '<div style="color:#555;font-size:13px;margin-bottom:14px;">Confiance '+conf.pct+'% ('+conf.withFacts+'/'+conf.applicable+' séances) — dernière observation : '+(cov.lastDate||"—")+'</div>';
     }
