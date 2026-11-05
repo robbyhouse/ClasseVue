@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>ClasseVue — Observation des apprentissages</title>
+<title>ClasseVue</title>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="icon-192.png">
@@ -605,7 +605,7 @@ var state = {
 };
 
 /* ---------------- Persistance locale automatique (IndexedDB) ---------------- */
-var APP_VERSION="2026.11.04";
+var APP_VERSION="2026.11.05";
 var DB_NAME="classevue_db", DB_VERSION=1, STORE="kv";
 var dbPromise=null;
 function getDB(){
@@ -1669,10 +1669,7 @@ function printReussitePdf(periods, classe){
     table.style.transformOrigin = "top left";
     table.style.transform = "scale("+scale.toFixed(3)+")";
   }
-  var oldTitle = document.title;
-  document.title = "ClasseVueReussite"+sanitizeFilePart(classe)+"_"+fileStamp();
-  window.print();
-  setTimeout(function(){ document.title = oldTitle; }, 500);
+  printWithTitle(exportFileName("Reussite", classe, periods));
 }
 function exportReussiteXls(periods, classe){
   var students = activeStudents(classe);
@@ -1710,8 +1707,7 @@ function exportReussiteXls(periods, classe){
     rows += line;
   });
   var html = "<html><head><meta charset='UTF-8'></head><body><table border='1'>"+rows+"</table></body></html>";
-  var periodTag = periods.length===1 ? sanitizeFilePart(periods[0].label) : "Comparaison";
-  download("ClasseVueReussite"+sanitizeFilePart(classe)+"_"+periodTag+"_"+fileStamp()+".xls", html, "application/vnd.ms-excel");
+  download(exportFileName("Reussite", classe, periods)+".xls", html, "application/vnd.ms-excel");
 }
 function periodSelectorHtml(){
   var opts = '<option value="annee"'+(state.period==="annee"?" selected":"")+'>Année complète</option>';
@@ -2304,6 +2300,40 @@ function fileStamp(){
   var d = new Date();
   return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())+"_"+pad(d.getHours())+"h"+pad(d.getMinutes());
 }
+// Date courte pour les noms de fichiers : jj-mm-aa
+function shortDateStamp(d){
+  d = d || new Date();
+  return pad(d.getDate())+"-"+pad(d.getMonth()+1)+"-"+pad(d.getFullYear()%100);
+}
+// Période abrégée pour les noms de fichiers : S1, S2, T1..T3, An, Perso, Comp
+function periodShortTag(periods){
+  if(!periods || periods.length!==1) return "Comp";
+  var k = periods[0].key;
+  if(k==="annee") return "An";
+  if(k==="custom") return "Perso";
+  var m = /^p(\d+)$/.exec(k);
+  if(m) return (state.periodMode==="trimestre" ? "T" : "S")+m[1];
+  return sanitizeFilePart(periods[0].label);
+}
+// Nom de fichier court : CV_Type_Classe_Période_jj-mm-aa  (extension ajoutée par l'appelant)
+function exportFileName(type, classe, periods){
+  var parts = ["CV", type];
+  var c = sanitizeFilePart(classe);
+  if(c) parts.push(c);
+  if(periods) parts.push(periodShortTag(periods));
+  parts.push(shortDateStamp());
+  return parts.join("_");
+}
+// Impression : le navigateur nomme le PDF d'après le titre de la page, on le garde jusqu'à la fin de l'impression
+function printWithTitle(name){
+  var oldTitle = document.title;
+  var restored = false;
+  function restore(){ if(restored) return; restored = true; document.title = oldTitle; window.removeEventListener("afterprint", restore); }
+  document.title = name;
+  window.addEventListener("afterprint", restore);
+  window.print();
+  setTimeout(restore, 60000);
+}
 
 document.getElementById("btnExportFull").addEventListener("click", function(){
   ensurePeriodDates();
@@ -2331,7 +2361,7 @@ document.getElementById("btnExportFull").addEventListener("click", function(){
     var vals = CATEGORIES.map(function(c){ return o[c.id]||""; });
     lines.push(["OBJECTIF",s.classe,s.nom,s.prenom].concat(vals).map(escCsv).join(","));
   });
-  download("ClasseVueBackup_"+fileStamp()+".csv", lines.join("\n"));
+  download("CV_Sauvegarde_"+shortDateStamp()+"_"+pad(new Date().getHours())+"h"+pad(new Date().getMinutes())+".csv", lines.join("\n"));
   state.lastFullBackupMs = Date.now();
   persist();
   renderBackupBanner();
@@ -2523,10 +2553,7 @@ document.getElementById("printModalGo").addEventListener("click", function(){
   document.getElementById("printView").innerHTML = html || "<p>Aucun élève.</p>";
   var pageStyle = document.getElementById("dynamicPageStyle");
   if(pageStyle) pageStyle.textContent = "@page{size:A4 portrait;margin:12mm;}";
-  var oldTitle = document.title;
-  document.title = "ClasseVueObs"+sanitizeFilePart(exportClasse)+"_"+fileStamp();
-  window.print();
-  setTimeout(function(){ document.title = oldTitle; }, 500);
+  printWithTitle(exportFileName("Profils", exportClasse, periods));
 });
 
 /* ---------------- Export XLS (comparaison) ---------------- */
@@ -2573,8 +2600,7 @@ document.getElementById("btnExportXls").addEventListener("click", function(){
     rows += line;
   });
   var html = "<html><head><meta charset='UTF-8'></head><body><table border='1'>"+rows+"</table></body></html>";
-  var periodTag = periods.length===1 ? sanitizeFilePart(periods[0].label) : "Comparaison";
-  download("ClasseVueComp"+sanitizeFilePart(exportClasse)+"_"+periodTag+"_"+fileStamp()+".xls", html, "application/vnd.ms-excel");
+  download(exportFileName("Comparaison", exportClasse, periods)+".xls", html, "application/vnd.ms-excel");
 });
 
 /* ---------------- Export MetaVue (XLS) — toujours une seule période, format minimal ---------------- */
@@ -2603,7 +2629,7 @@ document.getElementById("btnExportMetavue").addEventListener("click", function()
       CATEGORIES.map(function(c){ var v=scores[c.id]; return "<td>"+(v===null?"":Math.round(v))+"</td>"; }).join("")+"</tr>";
   });
   var html = "<html><head><meta charset='UTF-8'></head><body><table border='1'>"+rows+"</table></body></html>";
-  download("ClasseVueMetaVue"+sanitizeFilePart(exportClasse)+"_"+sanitizeFilePart(period.label)+"_"+fileStamp()+".xls", html, "application/vnd.ms-excel");
+  download(exportFileName("MetaVue", exportClasse, [period])+".xls", html, "application/vnd.ms-excel");
 });
 
 /* ---------------- Installation sur l'écran d'accueil ---------------- */
