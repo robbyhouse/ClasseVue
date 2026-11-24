@@ -269,6 +269,7 @@
   <div class="drawer-body">
 
     <div class="lastbackup-banner" id="lastBackupBanner"></div>
+    <div class="lastbackup-banner stale" id="yearEndBanner" style="display:none;white-space:normal;line-height:1.4;">L'année scolaire est terminée : enregistre une sauvegarde dans l'espace documentaire de ton ENT, puis efface les données (Zone de danger). Les données des élèves ne doivent pas être conservées sans limite.</div>
     <div class="install-banner" id="installBanner" style="display:none;">
       <span id="installBannerText">Installer ClasseVue sur l'écran d'accueil</span>
       <button class="btn primary" id="btnInstallApp">Installer</button>
@@ -422,6 +423,9 @@
     <div class="drawer-danger-zone">
       <button class="drawer-group-title" data-group="danger">Zone de danger <span class="chevron">▸</span></button>
       <div class="drawer-group-content" id="group-danger">
+      <p class="hint" id="purgeInfo" style="font-size:12.5px;color:var(--ink-soft);margin:4px 0 8px 0;line-height:1.4;"></p>
+      <button class="btn danger" id="btnPurgeInactive">Supprimer les élèves inactifs et leurs données</button>
+      <div class="status" id="statusPurge"></div>
       <button class="btn danger" id="btnReset">Effacer toutes les données de l'année scolaire</button>
       </div>
     </div>
@@ -605,7 +609,7 @@ var state = {
 };
 
 /* ---------------- Persistance locale automatique (IndexedDB) ---------------- */
-var APP_VERSION="2026.11.05";
+var APP_VERSION="2026.11.24";
 var DB_NAME="classevue_db", DB_VERSION=1, STORE="kv";
 var dbPromise=null;
 function getDB(){
@@ -714,7 +718,11 @@ function formatObjectiveLevel(v){
   if(v===undefined||v===null||v==="") return "";
   return String(Math.round(v/25*100)/100).replace(".",",");
 }
-function escapeHtml(s){ return (s||"").toString().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function escapeHtml(s){ return (s===undefined||s===null?"":s).toString().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;"); }
+// Validation des valeurs lues dans les fichiers (sauvegardes, imports) : rien d'autre que des dates et heures valides n'entre dans l'application.
+function isIsoDate(v){ return /^\d{4}-\d{2}-\d{2}$/.test(v||"") && !isNaN(new Date(v+"T00:00:00").getTime()); }
+function isHM(v){ return /^([01]?\d|2[0-3]):[0-5]\d$/.test(v||""); }
+function isoOrEmpty(v){ return isIsoDate(v) ? v : ""; }
 function escCsv(v){ v=(v===undefined||v===null)?"":String(v); if(v.indexOf(",")>-1||v.indexOf('"')>-1||v.indexOf("\n")>-1){ return '"'+v.replace(/"/g,'""')+'"'; } return v; }
 function detectDelimiter(line){ var c=(line.match(/,/g)||[]).length, s=(line.match(/;/g)||[]).length; return s>c?";":","; }
 function parseCsvLine(line, delim){
@@ -1121,6 +1129,7 @@ function importObservationsCsv(text){
   for(var i=start;i<rows.length;i++){
     var r=rows[i]; if(!r[0]) continue;
     var dateISO=r[0], timeHM=r[1]||"00:00", classe=r[2]||"", nom=r[3]||"", prenom=r[4]||"", categorie=r[5]||"", fait=r[6]||"";
+    if(!isIsoDate(dateISO) || !isHM(timeHM)) continue;
     var existingStudent = state.students.find(function(s){ return s.classe===classe && s.nom===nom && s.prenom===prenom; });
     var id;
     if(existingStudent){ id = existingStudent.id; }
@@ -1168,6 +1177,27 @@ function toggleObservation(studentId_, categorie, factId){
     recordObservation(studentId_, categorie, factId);
     return true;
   }
+}
+
+/* ---------------- Effacement des données d'un élève, purge des inactifs, fin d'année ---------------- */
+function deleteStudentData(id){
+  state.students = state.students.filter(function(s){ return s.id!==id; });
+  state.observations = state.observations.filter(function(o){ return o.studentId!==id; });
+  state.absences = state.absences.filter(function(a){ return a.studentId!==id; });
+  delete state.objectives[id];
+  if(state.currentClasse && !state.students.some(function(s){ return s.classe===state.currentClasse; })){ state.currentClasse = null; }
+  persist();
+}
+function inactiveStudents(){ return state.students.filter(function(s){ return s.status!=="actif"; }); }
+function purgeInactiveStudents(){
+  var ids = inactiveStudents().map(function(s){ return s.id; });
+  ids.forEach(deleteStudentData);
+  return ids.length;
+}
+// Vrai quand la fin de la dernière période de l'année scolaire est dépassée
+function isSchoolYearOver(){
+  var b = periodBoundsFor("p"+periodCount());
+  return isFinite(b[1]) && Date.now() > b[1];
 }
 
 function classesList(){
@@ -1518,7 +1548,7 @@ function renderSuiviView(main){
       '<td>'+(r.success===null?"—":r.success+"%"+r.arrow)+'</td>'+
       '<td>'+(r.observer?'<span class="badge pri" style="background:var(--priority-bg);color:var(--accent);">à observer</span>':'—')+'</td>'+
       '<td>'+(r.aider?'<span class="badge pri" style="background:var(--watch-bg);color:#8a5a12;">à aider</span>':'—')+'</td>'+
-      '<td>'+(r.cov.lastDate||"—")+'</td>'+
+      '<td>'+escapeHtml(r.cov.lastDate||"—")+'</td>'+
       '<td><button class="link-btn" data-profile2="'+r.s.id+'">Profil →</button></td>'+
       '</tr>';
   });
@@ -1719,7 +1749,7 @@ function periodSelectorHtml(){
   opts += '<option value="custom"'+(state.period==="custom"?" selected":"")+'>Période personnalisée</option>';
   var h = '<select id="periodSelect">'+opts+'</select>';
   if(state.period==="custom"){
-    h += '<input type="date" id="customStart" value="'+state.customStart+'"> <span class="hint">à</span> <input type="date" id="customEnd" value="'+state.customEnd+'">';
+    h += '<input type="date" id="customStart" value="'+escapeHtml(state.customStart)+'"> <span class="hint">à</span> <input type="date" id="customEnd" value="'+escapeHtml(state.customEnd)+'">';
   }
   return h;
 }
@@ -1754,7 +1784,7 @@ function renderSheet(){
       html += '<div class="history-strip"><div class="hs-title">Derniers faits saisis</div>';
       recent.forEach(function(o){
         var f = factById(o.categorie,o.fait), c = catById(o.categorie);
-        html += '<div class="hs-item"><span>'+escapeHtml(c?c.label:o.categorie)+' · '+escapeHtml(f?f.label:o.fait)+'</span><span class="hs-time">'+o.dateISO+' '+o.timeHM+'</span></div>';
+        html += '<div class="hs-item"><span>'+escapeHtml(c?c.label:o.categorie)+' · '+escapeHtml(f?f.label:o.fait)+'</span><span class="hs-time">'+escapeHtml(o.dateISO+' '+o.timeHM)+'</span></div>';
       });
       html += '</div>';
     }
@@ -1879,7 +1909,7 @@ function renderProfile(){
   if(evo.length===0){ html += '<div class="hint" style="color:var(--ink-soft);font-size:13px;">Pas encore d\'observation sur cette période.</div>'; }
   evo.forEach(function(m){
     var total = m.counts.pos+m.counts.neu+m.counts.neg || 1;
-    html += '<div class="evo-row"><div class="evo-label">'+m.month+'</div><div class="evo-bar-bg">'+
+    html += '<div class="evo-row"><div class="evo-label">'+escapeHtml(m.month)+'</div><div class="evo-bar-bg">'+
       '<span style="width:'+(100*m.counts.pos/total)+'%;background:var(--pos)"></span>'+
       '<span style="width:'+(100*m.counts.neu/total)+'%;background:var(--neutre)"></span>'+
       '<span style="width:'+(100*m.counts.neg/total)+'%;background:var(--neg)"></span>'+
@@ -1892,10 +1922,18 @@ function renderProfile(){
   obsList.forEach(function(o){
     var f = factById(o.categorie, o.fait);
     var c = catById(o.categorie);
-    html += '<div class="history-item"><div class="history-time">'+o.dateISO+' '+o.timeHM+'</div><div>'+escapeHtml(c?c.label:o.categorie)+' · '+escapeHtml(f?f.label:o.fait)+'</div></div>';
+    html += '<div class="history-item"><div class="history-time">'+escapeHtml(o.dateISO+' '+o.timeHM)+'</div><div>'+escapeHtml(c?c.label:o.categorie)+' · '+escapeHtml(f?f.label:o.fait)+'</div></div>';
   });
 
+  html += '<div style="margin-top:28px;padding-top:14px;border-top:1px solid var(--line);"><p class="hint" style="font-size:12px;color:var(--ink-soft);margin:0 0 8px 0;">Droit à l\'effacement : supprime définitivement cet élève, ses observations, ses absences et ses objectifs.</p><button class="btn danger" id="btnDeleteStudent">Supprimer cet élève et toutes ses données</button></div>';
   document.getElementById("profileBody").innerHTML = html;
+  var delBtn = document.getElementById("btnDeleteStudent");
+  if(delBtn) delBtn.addEventListener("click", function(){
+    if(!window.confirm("Supprimer définitivement "+s.prenom+" "+s.nom.toUpperCase()+" ("+s.classe+") et toutes ses données (observations, absences, objectifs) ? Cette action est irréversible. Pense à exporter une sauvegarde avant.")) return;
+    deleteStudentData(s.id);
+    closeProfile();
+    render();
+  });
   bindPeriodSelector();
   var reRender = document.getElementById("periodSelect");
   if(reRender) reRender.addEventListener("change", function(){ renderProfile(); });
@@ -1999,7 +2037,7 @@ var INFO_TEXTS = {
   radarconfig: "Choisis les catégories affichées comme axes sur le radar du profil et sur les profils imprimés. Toutes les catégories restent observables et comptent dans le score de réussite, quelles que soient les cases cochées ici — ce réglage ne change que l'affichage du graphique.",
   reussite: "Moyenne des scores de toutes les catégories observables (radar) sur la période choisie dans le menu déroulant, que la catégorie soit affichée sur le radar ou non. Chaque fait observé porte un pourcentage (25/50/75/100) ; le score de réussite est la moyenne de tous les faits enregistrés sur la période, tous critères confondus.",
   pronote: "Le fichier à importer doit être un export CSV réalisé directement par Pronote — à ne surtout pas créer ou modifier soi-même dans Excel, sous peine d'erreurs. Colonnes utilisées : Eleves, Né(s), Sexe (les autres colonnes du fichier sont ignorées, tu peux les laisser telles quelles). Le numéro de classe n'étant pas dans ce fichier, indique-le dans le champ ci-dessus avant chaque import — un fichier = une classe. Réimporter une classe met à jour la liste (ajout des nouveaux, passage en inactif de ceux qui sont partis) sans toucher aux autres élèves ni à leur historique.",
-  backup: "Ce fichier contient tout : la liste de toutes tes classes et l'intégralité de l'historique des observations, ainsi que l'année scolaire et les dates de semestres configurées. Exporte-le régulièrement pour ne rien perdre. Réimporter une sauvegarde remplace entièrement les données actuelles — utile en cas d'erreur, mais irréversible. (Les données se sauvegardent aussi automatiquement sur cet appareil, dans ce navigateur — mais ouvrir le fichier sur un autre appareil ou après avoir vidé les données du navigateur ne les retrouvera pas : cette sauvegarde complète est ta seule copie transférable.)",
+  backup: "Ce fichier contient tout : la liste de toutes tes classes et l'intégralité de l'historique des observations, ainsi que l'année scolaire et les dates de semestres configurées. Exporte-le régulièrement pour ne rien perdre. Réimporter une sauvegarde remplace entièrement les données actuelles — utile en cas d'erreur, mais irréversible. (Les données se sauvegardent aussi automatiquement sur cet appareil, dans ce navigateur — mais ouvrir le fichier sur un autre appareil ou après avoir vidé les données du navigateur ne les retrouvera pas : cette sauvegarde complète est ta seule copie transférable.) Ce fichier contient des données d'élèves : conserve-le dans l'espace documentaire de ton ENT ou envoie-le-toi par la messagerie de l'ENT, pas sur un cloud personnel.",
   exports: "Le navigateur enregistre chaque export dans son dossier de téléchargement habituel ; une sélection manuelle du dossier à chaque fois n'est malheureusement pas possible sur téléphone (limitation de Safari/Firefox mobile).",
   objectifs: "Le modèle téléchargé contient déjà la liste des élèves de la classe choisie (et les objectifs déjà fixés, s'il y en a). Remplis les colonnes avec un niveau de 1 à 4 dans Excel (les décimales sont acceptées, par exemple 2,5), laisse vide ce que tu ne veux pas fixer, puis réimporte le fichier. Seules les cases remplies sont mises à jour ; le reste n'est pas modifié. L'onglet \"Objectifs\" de l'application permet ensuite les ajustements ponctuels en cours d'année."
 };
@@ -2016,10 +2054,19 @@ function renderBackupBanner(){
   el.textContent = (stale?"⚠ ":"")+"Dernière sauvegarde : "+pad(d.getDate())+"/"+pad(d.getMonth()+1)+"/"+d.getFullYear()+" "+pad(d.getHours())+":"+pad(d.getMinutes());
   el.className = "lastbackup-banner"+(stale?" stale":"");
 }
+function renderPurgeInfo(){
+  var yb = document.getElementById("yearEndBanner");
+  if(yb) yb.style.display = (isSchoolYearOver() && state.students.length>0) ? "block" : "none";
+  var n = inactiveStudents().length;
+  var info = document.getElementById("purgeInfo");
+  if(info) info.textContent = n>0 ? (n+" élève(s) inactif(s) (sortis d'une classe) : leurs observations sont encore conservées.") : "Aucun élève inactif : rien à purger.";
+  var btn = document.getElementById("btnPurgeInactive");
+  if(btn) btn.disabled = n===0;
+}
 function frDate(iso){
   if(!iso) return "—";
+  if(!isIsoDate(iso)) return "—";
   var parts = iso.split("-");
-  if(parts.length!==3) return iso;
   return parts[2]+"/"+parts[1]+"/"+parts[0];
 }
 function renderAnneeSummary(){
@@ -2090,6 +2137,7 @@ function openDrawer(){
   document.querySelectorAll(".drawer-group-title.open").forEach(function(el){ el.classList.remove("open"); });
   renderAnneeSummary();
   renderBackupBanner();
+  renderPurgeInfo();
   document.getElementById("progressionWindowSelect").value = String(state.progressionWindow||3);
   document.getElementById("reussiteDisplayModeSelect").value = state.reussiteDisplayMode;
   renderRadarAxesChecks();
@@ -2179,8 +2227,8 @@ function renderPeriodDateFields(){
   for(var i=1;i<=n;i++){
     var sk="p"+i+"Start", ek="p"+i+"End";
     html += '<div class="mini-date-row">'+
-      '<div><label class="mini-label">Début '+periodLabelForMode(i,modalTemp.periodMode)+'</label><input type="date" data-pkey="'+sk+'" value="'+(modalTemp.periodDates[sk]||"")+'" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;"></div>'+
-      '<div><label class="mini-label">Fin '+periodLabelForMode(i,modalTemp.periodMode)+'</label><input type="date" data-pkey="'+ek+'" value="'+(modalTemp.periodDates[ek]||"")+'" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;"></div>'+
+      '<div><label class="mini-label">Début '+periodLabelForMode(i,modalTemp.periodMode)+'</label><input type="date" data-pkey="'+sk+'" value="'+escapeHtml(modalTemp.periodDates[sk]||"")+'" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;"></div>'+
+      '<div><label class="mini-label">Fin '+periodLabelForMode(i,modalTemp.periodMode)+'</label><input type="date" data-pkey="'+ek+'" value="'+escapeHtml(modalTemp.periodDates[ek]||"")+'" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;"></div>'+
       '</div>';
   }
   document.getElementById("periodDateFields").innerHTML = html;
@@ -2378,13 +2426,13 @@ function restoreFromCsvText(text, statusElId){
     var newSessionLog=[], absenceRaw=[], objectifRaw=[];
     var lookup = {}; // normalized "classe|nom|prenom" -> student
     function normKey(classe,nom,prenom){ return slugify(classe)+"|"+slugify(nom)+"|"+slugify(prenom); }
-    var countEleve=0, countObs=0, countObsMatched=0;
+    var countEleve=0, countObs=0, countObsMatched=0, countObsRejected=0;
     for(var i=start;i<rows.length;i++){
       var r=rows[i]; if(!r[0]) continue;
       if(r[0]==="META"){
         newAnnee = r[1]||null;
         newPeriodMode = (r[2]==="trimestre") ? "trimestre" : "semestre";
-        newPeriodDates = {p1Start:r[3]||"", p1End:r[4]||"", p2Start:r[5]||"", p2End:r[6]||"", p3Start:r[7]||"", p3End:r[8]||""};
+        newPeriodDates = {p1Start:isoOrEmpty(r[3]), p1End:isoOrEmpty(r[4]), p2Start:isoOrEmpty(r[5]), p2End:isoOrEmpty(r[6]), p3Start:isoOrEmpty(r[7]), p3End:isoOrEmpty(r[8])};
       } else if(r[0]==="SESSION"){
         newSessionLog.push({id:r[2]||uid(), classe:r[1]||"", startedAt:parseInt(r[3],10)||Date.now(), endedAt: r[4]?parseInt(r[4],10):null});
       } else if(r[0]==="ABSENCE"){
@@ -2400,6 +2448,7 @@ function restoreFromCsvText(text, statusElId){
       } else if(r[0]==="OBS"){
         countObs++;
         var oClasse=r[1]||"", oNom=r[2]||"", oPrenom=r[3]||"", oDate=r[7]||"", oHeure=r[8]||"00:00", oCat=r[9]||"", oFait=r[10]||"";
+        if(!isIsoDate(oDate) || !isHM(oHeure)){ countObsRejected++; continue; } // date ou heure invalide : ligne ignorée
         var match = lookup[normKey(oClasse,oNom,oPrenom)];
         var oid;
         if(match){ oid = match.id; countObsMatched++; }
@@ -2445,7 +2494,7 @@ function restoreFromCsvText(text, statusElId){
     persist();
     renderBackupBanner();
     renderAnneeSummary();
-    setStatus(statusElId, "Chargement effectué : "+countEleve+" élève(s) lu(s), "+countObs+" observation(s) lue(s) ("+countObsMatched+" rattachées directement).", "ok");
+    setStatus(statusElId, "Chargement effectué : "+countEleve+" élève(s) lu(s), "+countObs+" observation(s) lue(s) ("+countObsMatched+" rattachées directement)."+(countObsRejected>0?" "+countObsRejected+" ligne(s) ignorée(s) car la date ou l'heure n'était pas valide.":""), "ok");
     render();
     return true;
   }catch(err){ setStatus(statusElId,"Erreur de lecture du fichier.","err"); return false; }
@@ -2478,6 +2527,15 @@ document.getElementById("btnLoadDemo").addEventListener("click", function(){
     .catch(function(err){ setStatus("statusDemo","Impossible de charger ce jeu de données (fichier non trouvé sur le serveur).","err"); });
 });
 
+document.getElementById("btnPurgeInactive").addEventListener("click", function(){
+  var n = inactiveStudents().length;
+  if(n===0){ return; }
+  if(!window.confirm("Supprimer définitivement "+n+" élève(s) inactif(s) et toutes leurs données (observations, absences, objectifs) ? Cette action est irréversible. Pense à exporter une sauvegarde avant.")) return;
+  var done = purgeInactiveStudents();
+  render();
+  renderPurgeInfo();
+  setStatus("statusPurge", done+" élève(s) supprimé(s) avec leurs données.", "ok");
+});
 document.getElementById("btnReset").addEventListener("click", function(){
   if(window.confirm("Effacer toutes les données de l'année scolaire "+state.anneeScolaire+" (toutes classes, toutes observations) ? Pense à exporter une sauvegarde avant. Cette action est irréversible.")){
     state.students=[]; state.observations=[]; state.currentClasse=null; state.sessionLog=[]; state.absences=[]; state.objectives={}; state.lastFullBackupMs=null; persist(); render();
@@ -2530,7 +2588,7 @@ document.getElementById("printModalGo").addEventListener("click", function(){
     html += '<h1 style="font-size:20px;margin-bottom:2px;">'+escapeHtml(s.prenom)+' '+escapeHtml(s.nom.toUpperCase())+'</h1>';
     html += '<div style="color:#555;font-size:13px;margin-bottom:14px;">'+escapeHtml([s.classe].concat(extraParts).join(" · "))+'</div>';
     if(withStats){
-      html += '<div style="color:#555;font-size:13px;margin-bottom:14px;">Confiance '+conf.pct+'% ('+conf.withFacts+'/'+conf.applicable+' séances) — dernière observation : '+(cov.lastDate||"—")+'</div>';
+      html += '<div style="color:#555;font-size:13px;margin-bottom:14px;">Confiance '+conf.pct+'% ('+conf.withFacts+'/'+conf.applicable+' séances) — dernière observation : '+escapeHtml(cov.lastDate||"—")+'</div>';
     }
     if(withRadar){
       html += radarSVG(scoresCurrent, 320, scoresYear, objectives, visibleRadarCategories());
@@ -2544,7 +2602,7 @@ document.getElementById("printModalGo").addEventListener("click", function(){
       if(obsList.length===0){ html += '<div style="font-size:13px;color:#777;">Aucune observation.</div>'; }
       obsList.forEach(function(o){
         var f = factById(o.categorie,o.fait), c = catById(o.categorie);
-        html += '<div style="font-size:12.5px;padding:3px 0;border-bottom:1px solid #eee;"><span style="color:#999;font-family:monospace;">'+o.dateISO+' '+o.timeHM+'</span> — '+escapeHtml(c?c.label:o.categorie)+' · '+escapeHtml(f?f.label:o.fait)+'</div>';
+        html += '<div style="font-size:12.5px;padding:3px 0;border-bottom:1px solid #eee;"><span style="color:#999;font-family:monospace;">'+escapeHtml(o.dateISO+' '+o.timeHM)+'</span> — '+escapeHtml(c?c.label:o.categorie)+' · '+escapeHtml(f?f.label:o.fait)+'</div>';
       });
       html += '</div>';
     }
